@@ -8,8 +8,8 @@ const assets = { '/index.html': { body: '<!doctype html><title>ExitPlan</title>'
 const constraints = { target: 2000, maxNewDebt: 0, minHlBuffer: 1500, deadlineHours: 24, preserveHedge: true, preserveSolQuantity: false };
 const intentBody = JSON.stringify({ text: '2000 USDC', currentConstraints: constraints });
 const noopIntent = async () => ({ status: 200, body: { mode: 'ai', constraints, requiresConfirmation: true } });
-function intentRequest({ headers = {}, body = intentBody, method = 'POST', user = 'test-user' } = {}) {
-  const options = { method, headers: { origin, 'content-type': 'application/json', ...(user === null ? {} : { 'oai-authenticated-user-id': user }), ...headers } };
+function intentRequest({ headers = {}, body = intentBody, method = 'POST', ip = '203.0.113.7' } = {}) {
+  const options = { method, headers: { origin, 'content-type': 'application/json', ...(ip === null ? {} : { 'x-forwarded-for': ip }), ...headers } };
   if (!['GET', 'HEAD'].includes(method)) { options.body = body; if (body instanceof ReadableStream) options.duplex = 'half'; }
   return new Request(`${origin}/api/intent`, options);
 }
@@ -90,9 +90,18 @@ test('AI without configuration is honestly unavailable and never calls fetch', a
   } finally { globalThis.fetch = originalFetch; }
 });
 
-test('intent requires an authenticated identity', async () => {
-  const app = createApp(assets, { interpretIntentImpl: () => assert.fail('must not run') });
-  assert.equal((await app.fetch(intentRequest({ user: null }))).status, 401);
+test('intent without a forwarded address shares one limiter bucket', async () => {
+  let calls = 0;
+  const app = createApp(assets, { interpretIntentImpl: async () => { calls++; return noopIntent(); } });
+  for (let i = 0; i < 10; i++) assert.equal((await app.fetch(intentRequest({ ip: null }))).status, 200);
+  assert.equal((await app.fetch(intentRequest({ ip: null }))).status, 429);
+  assert.equal(calls, 10);
+});
+
+test('intent accepts an origin whose host matches x-forwarded-host on a proxied URL', async () => {
+  const app = createApp(assets, { interpretIntentImpl: noopIntent });
+  const request = new Request('http://127.0.0.1:3000/api/intent', { method: 'POST', body: intentBody, headers: { origin: 'https://exitplan.vercel.app', 'x-forwarded-host': 'exitplan.vercel.app', 'content-type': 'application/json', 'x-forwarded-for': '198.51.100.2' } });
+  assert.equal((await app.fetch(request)).status, 200);
 });
 
 for (const invalidOrigin of ['https://attacker.example', 'https://exitplan.example.attacker.example', 'null', '']) {
@@ -171,7 +180,7 @@ test('per-user rate limit returns a retry time and resets at the window boundary
   assert.equal(blocked.status, 429);
   assert.equal(blocked.headers.get('retry-after'), '60');
   assert.equal(calls, 10);
-  assert.equal((await app.fetch(intentRequest({ user: 'another-user' }))).status, 200);
+  assert.equal((await app.fetch(intentRequest({ ip: '198.51.100.9' }))).status, 200);
   clock += 60_000;
   assert.equal((await app.fetch(intentRequest())).status, 200);
 });
@@ -179,11 +188,11 @@ test('per-user rate limit returns a retry time and resets at the window boundary
 test('identity map is capped and expired entries free capacity', async () => {
   let clock = 0;
   const app = createApp(assets, { now: () => clock, interpretIntentImpl: noopIntent });
-  for (let i = 0; i < 1000; i++) assert.equal((await app.fetch(intentRequest({ user: `user-${i}` }))).status, 200);
-  assert.equal((await app.fetch(intentRequest({ user: 'overflow-user' }))).status, 429);
-  assert.equal((await app.fetch(intentRequest({ user: 'user-0' }))).status, 200);
+  for (let i = 0; i < 1000; i++) assert.equal((await app.fetch(intentRequest({ ip: `10.0.${Math.floor(i / 256)}.${i % 256}` }))).status, 200);
+  assert.equal((await app.fetch(intentRequest({ ip: '192.0.2.1' }))).status, 429);
+  assert.equal((await app.fetch(intentRequest({ ip: '10.0.0.0' }))).status, 200);
   clock = 60_000;
-  assert.equal((await app.fetch(intentRequest({ user: 'overflow-user' }))).status, 200);
+  assert.equal((await app.fetch(intentRequest({ ip: '192.0.2.1' }))).status, 200);
 });
 
 test('rate limit state is isolated per created app instance', async () => {
@@ -212,7 +221,7 @@ test('configured intent adapter is bounded, proposal-only, and sends no unrelate
   let request;
   const fakeFetch = async (url, init) => {
     request = { url, init, payload: JSON.parse(init.body) };
-    return Response.json({ status: 'completed', output: [{ content: [{ type: 'output_text', text: JSON.stringify({ constraints, questions: [], explanation: '조건 유지' }) }] }] });
+    return Response.json({ status: 'completed', output: [{ content: [{ type: 'output_text', text: JSON.stringify({ constraints, questions: [], explanation: 'Keep current conditions' }) }] }] });
   };
   const result = await interpretIntent({ text: '2000 USDC', currentConstraints: { ...constraints, recipient: 'do-not-send' }, portfolio: { secret: 'do-not-send' }, tools: ['execute'] }, { OPENAI_API_KEY: 'test-key', OPENAI_MODEL: 'test-model' }, fakeFetch);
   assert.equal(result.status, 200);

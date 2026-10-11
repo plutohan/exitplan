@@ -75,14 +75,17 @@ export function createApp(assets, { interpretIntentImpl = interpretIntent, marke
       if (url.pathname === '/api/market') {
         if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405, { allow: 'GET' });
         try { return json(await marketSnapshotImpl()); }
-        catch { return json({ error: '공개 시장 가격을 가져오지 못했습니다', evidence: 'unavailable' }, 502); }
+        catch { return json({ error: 'Public market price is unavailable', evidence: 'unavailable' }, 502); }
       }
       if (url.pathname === '/api/intent') {
         if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, { allow: 'POST' });
-        // Sites must supply/overwrite this header at its authenticated edge.
-        const user = request.headers.get('oai-authenticated-user-id');
-        if (!user) return json({ error: '로그인이 필요합니다' }, 401);
-        if (request.headers.get('origin') !== url.origin) return json({ error: 'Origin rejected' }, 403);
+        // Best-effort identity: first hop of the proxy's forwarded chain, or one shared bucket.
+        const user = request.headers.get('x-forwarded-for')?.split(',')[0].trim() || 'shared';
+        // Same-site check by host: behind a proxy the function may see an internal URL.
+        const expectedHost = request.headers.get('x-forwarded-host') || request.headers.get('host') || url.host;
+        let originHost = null;
+        try { originHost = new URL(request.headers.get('origin') ?? '').host; } catch {}
+        if (!originHost || originHost !== expectedHost) return json({ error: 'Origin rejected' }, 403);
         if (request.headers.get('sec-fetch-site') === 'cross-site') return json({ error: 'Origin rejected' }, 403);
         if (!/^application\/json(?:\s*;|$)/i.test(request.headers.get('content-type') ?? '')) return json({ error: 'JSON required' }, 415);
         const currentTime = now();
@@ -90,7 +93,7 @@ export function createApp(assets, { interpretIntentImpl = interpretIntent, marke
         for (const [key, value] of limits) if (value.until <= currentTime) limits.delete(key);
         const entry = limits.get(user);
         if ((!entry && limits.size >= MAX_RATE_LIMIT_USERS) || (entry && entry.count >= MAX_INTENTS_PER_WINDOW)) {
-          return json({ error: '잠시 후 다시 시도해주세요' }, 429, { 'retry-after': String(Math.max(1, Math.ceil(((entry?.until ?? currentTime + RATE_LIMIT_WINDOW_MS) - currentTime) / 1000))) });
+          return json({ error: 'Please try again in a moment' }, 429, { 'retry-after': String(Math.max(1, Math.ceil(((entry?.until ?? currentTime + RATE_LIMIT_WINDOW_MS) - currentTime) / 1000))) });
         }
         limits.set(user, entry ? { ...entry, count: entry.count + 1 } : { until: currentTime + RATE_LIMIT_WINDOW_MS, count: 1 });
         const input = await readIntentBody(request);
