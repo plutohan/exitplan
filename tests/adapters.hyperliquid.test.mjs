@@ -15,6 +15,7 @@ const fetchFor = (state, options = {}) => async (url, init) => {
   if (body.type === 'vaultDetails') { assert.equal(body.vaultAddress, ADDR); return Response.json(options.vault ?? null); }
   if (body.type === 'spotClearinghouseState') { assert.equal(body.user, ADDR); return Response.json(options.spot ?? { balances: [] }); }
   if (body.type === 'clearinghouseState') { assert.equal(body.user, ADDR); return Response.json(state); }
+  if (body.type === 'userFees') { assert.equal(body.user, ADDR); if (options.fees === 'error') return new Response('boom', { status: 500 }); return Response.json(options.fees ?? await fixture('hl-user-fees')); }
   if (body.type === 'fundingHistory') { assert.equal(body.coin, 'SOL'); assert.ok(Number.isInteger(body.startTime)); if (options.funding === 'error') return new Response('boom', { status: 500 }); return Response.json(options.funding ?? await fixture('hl-funding-history')); }
   assert.fail('unexpected request ' + init.body);
 };
@@ -259,4 +260,18 @@ test('imports the 7-day average SOL funding as an annual rate, and degrades to u
   assert.equal(empty.state.fundingApr, null);
   const garbage = await importHyperliquid(ADDR, { fetchImpl: fetchFor(state, { funding: [{ fundingRate: 'nope' }] }) });
   assert.equal(garbage.state.fundingApr, null);
+});
+
+test('imports the account taker rate as the short-reduction fee, rounded up to the basis point, and degrades to the 5 bps model', async () => {
+  const state = await fixture('hl-sol-short');
+  const result = await importHyperliquid(ADDR, { fetchImpl: fetchFor(state) });
+  assert.deepEqual(result.reported.fees, { takerRate: 0.0003825, makerRate: 0.0001275, closeBps: 4 });
+  assert.ok(result.assumptions.some(line => /taker rate/.test(line) && /3\.825 bps/.test(line) && /up to 4 bps/.test(line)), result.assumptions.join(' | '));
+  const fresh = await importHyperliquid(ADDR, { fetchImpl: fetchFor(state, { fees: { userCrossRate: '0.00045', userAddRate: '0.00015' } }) });
+  assert.equal(fresh.reported.fees.closeBps, 5);
+  const down = await importHyperliquid(ADDR, { fetchImpl: fetchFor(state, { fees: 'error' }) });
+  assert.equal(down.reported.fees, null);
+  assert.ok(down.assumptions.some(line => /fee schedule unavailable/i.test(line) && /5 bps/.test(line)), down.assumptions.join(' | '));
+  const garbage = await importHyperliquid(ADDR, { fetchImpl: fetchFor(state, { fees: { userCrossRate: 'abc' } }) });
+  assert.equal(garbage.reported.fees, null);
 });

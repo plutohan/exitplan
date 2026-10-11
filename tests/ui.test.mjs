@@ -21,6 +21,8 @@ const hlNoPosition = await loadFixture('hl-no-position');
 const hlUnifiedPerps = await loadFixture('hl-unified-perps');
 const hlUnifiedSpot = await loadFixture('hl-unified-spot');
 const hlFunding = await loadFixture('hl-funding-history');
+const hlFees = await loadFixture('hl-user-fees');
+const hlBook = await loadFixture('hl-l2book');
 const kaminoFixture = await loadFixture('kamino-obligations');
 const jupiterFixture = await loadFixture('jupiter-quote');
 const WALLET = 'DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK';
@@ -29,7 +31,7 @@ const EXTERNAL_HOSTS = ['api.hyperliquid.xyz', 'solana-rpc.publicnode.com', 'api
 const external = ({ hl = hlShort, kamino = kaminoFixture, jupiter = jupiterFixture, lamports = 3_219_600_000, fail = null, mode = 'disabled', spot = { balances: [] } } = {}) => async call => {
   const target = new URL(call.url);
   if (fail && target.host === fail) return new Response('down', { status: 500 });
-  if (target.host === 'api.hyperliquid.xyz') { const type = JSON.parse(call.body).type; return json(type === 'allMids' ? { SOL: '109.695' } : type === 'userAbstraction' ? mode : type === 'vaultDetails' ? null : type === 'spotClearinghouseState' ? spot : type === 'fundingHistory' ? hlFunding : hl); }
+  if (target.host === 'api.hyperliquid.xyz') { const type = JSON.parse(call.body).type; return json(type === 'allMids' ? { SOL: '109.695' } : type === 'userAbstraction' ? mode : type === 'vaultDetails' ? null : type === 'spotClearinghouseState' ? spot : type === 'fundingHistory' ? hlFunding : type === 'userFees' ? hlFees : type === 'l2Book' ? hlBook : hl); }
   if (target.host === 'solana-rpc.publicnode.com') return json({ jsonrpc: '2.0', id: 1, result: { context: { slot: 1 }, value: lamports } });
   if (target.host === 'api.kamino.finance' && target.pathname.endsWith('/reserves/metrics')) return json([{ reserve: 'D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59', totalSupply: '120702201.4', totalBorrow: '112626977.24', supplyApy: '0.0468228385' }]);
   if (target.host === 'api.kamino.finance') return json(kamino);
@@ -519,7 +521,7 @@ test('import by address loads both venues, labels plans IMPORTED and uses the qu
   assert.match(ui.get('.demo-label').textContent, /Imported/);
   assert.match(ui.get('.demo-label').textContent, /No real transactions/);
   assert.equal(ui.get('#load-positions').disabled, false);
-  assert.equal(ui.calls.filter(call => EXTERNAL_HOSTS.includes(call.host)).length, 11); // balance, Kamino obligations, Kamino reserve metrics, quote, wallet balances, clearinghouse, mids, account mode, vault check, spot balances, funding history
+  assert.equal(ui.calls.filter(call => EXTERNAL_HOSTS.includes(call.host)).length, 12); // balance, Kamino obligations, Kamino reserve metrics, quote, wallet balances, clearinghouse, mids, account mode, vault check, spot balances, funding history, user fees
   assert.match(ui.get('#import-status').textContent, /\$336\.40 in wallet/);
   assertNoExecutionCalls(ui);
 });
@@ -587,7 +589,14 @@ test('imported rehearsal simulates the sell leg read-only and other steps are la
   assert.match(ui.get('#dialog-body').textContent, /Read-only rehearsal/);
   assert.match(ui.get('#dialog-body').textContent, /Nothing to simulate: USDC is already in the wallet/);
   await ui.click('#rehearsal-next'); // past the wallet step
-  assert.match(ui.get('#dialog-body').textContent, /Not simulated: a Hyperliquid order/);
+  assert.match(ui.get('#simulate-step').textContent, /Preview fill on the Hyperliquid book/);
+  await ui.click('#simulate-step');
+  for (let i = 0; i < 20 && /Reading/.test(ui.get('#simulation-result').textContent); i++) await flush();
+  assert.match(ui.get('#simulation-result').textContent, /Book preview/);
+  assert.match(ui.get('#simulation-result').textContent, /average \$111\.09/);
+  assert.match(ui.get('#simulation-result').textContent, /taker fee/);
+  assert.match(ui.get('#simulation-result').textContent, /no order placed/);
+  assert.ok(!ui.calls.some(call => call.host === 'api.hyperliquid.xyz' && /\/exchange/.test(call.url)), 'the preview never touches the exchange endpoint');
   await ui.click('#rehearsal-next'); // past the short reduction, which now comes before the sale
   assert.ok(ui.document.querySelector('#simulate-step'), 'sell step offers a read-only simulation');
   await ui.click('#simulate-step');
@@ -1047,4 +1056,12 @@ test('the readout names the reserve rate actually applied to the short', async t
   await importPositions(ui);
   const item = [...ui.document.querySelectorAll('#preflight-items li')].find(li => /HL margin buffer/.test(li.textContent));
   assert.match(item.textContent, /20% reserve/);
+});
+
+test('imported routes use the account taker rate for the short-reduction fee and the evidence dialog says so', async t => {
+  const ui = await mount(t, { externalResponse: external() });
+  await importPositions(ui);
+  await ui.click('#open-evidence');
+  assert.match(ui.get('#dialog-body').textContent, /short reduction 0\.04%/);
+  assert.match(ui.get('#dialog-body').textContent, /your Hyperliquid taker rate/);
 });

@@ -1,7 +1,7 @@
 import { createDemoPortfolio, defaultConstraints, planExit, requiredMarginCents } from './engine.mjs';
 import { importHyperliquid, estimateLiquidationAfter } from './adapters/hyperliquid.mjs';
 import { importSolana, isSolanaAddress } from './adapters/solana.mjs';
-import { simulateSellSol, simulateKaminoWithdraw } from './adapters/rehearsal.mjs';
+import { simulateSellSol, simulateKaminoWithdraw, previewReduceShort } from './adapters/rehearsal.mjs';
 
 const $ = (query, root = document) => root.querySelector(query);
 const $$ = (query, root = document) => [...root.querySelectorAll(query)];
@@ -568,7 +568,7 @@ function openEvidence(all = false) {
     : `<p>Every balance, price, fee and duration on this screen is a reproducible synthetic input. No real account or on-chain state was read.</p><h3>Synthetic portfolio</h3><div class="assumption-grid"><div class="assumption-item"><span>SOL spot · reference price</span><b>100 SOL · $100</b></div><div class="assumption-item"><span>Hyperliquid SOL short</span><b>100 SOL · $100</b></div><div class="assumption-item"><span>Solana deposit</span><b>3,000 USDC</b></div><div class="assumption-item"><span>HL collateral · simple required margin</span><b>$4,000 · $1,000</b></div></div>`;
   const body =
     intro +
-    `<h3>Calculation rules</h3><ul><li>Net cash = withdrawals + sales + new debt − fees paid from cash</li><li>The short's notional is not cash. Short-reduction fees are deducted from HL collateral separately.</li><li>HL buffer = remaining collateral − short notional × assumed 10% reserve. It is not a liquidation price or protocol health metric.</li><li>${isImported ? `Keeping net exposure means selling the same SOL quantity that the short is reduced by. Starting net exposure: ${num(portfolio.solana.sol - portfolio.hyperliquid.shortSol)} SOL.` : 'Keeping net exposure means selling the same SOL quantity that the short is reduced by, so the starting net SOL exposure is preserved. The starting ratio is 1:1.'}</li><li>Net USDC is assumed to arrive in a Solana wallet, not as fiat in a bank account.</li><li>Carry given up per route = short reduced × mark × funding rate (7-day average, annualised) + deposit withdrawn × supply APY, at today's rates. It is shown on each route and not used for ranking.</li><li>A fixed set of combinations is evaluated and sorted by lowest upfront fees. This is not a global optimum or investment advice.</li></ul><h3>Estimated fees and borrowing</h3><p>Model fees: deposit withdrawal ${money(portfolio.fees.lendingWithdraw, true)} · SOL sale ${(portfolio.fees.solSaleBps / 100).toFixed(2)}% · short reduction 0.05% · HL transfer $1.00 (a placeholder, not a CCTP quote: Circle's Solana delivery has a higher forwarding fee and a minimum) · loan origination $0.50. New debt shows one day of interest at an assumed 8% APR; total interest is unknown without a repayment date. There is no real borrowing adapter.${isImported ? '' : ' Carry in this scenario uses a synthetic 8% funding rate and 5% supply APY.'}</p>${current ? `<h3>Cash flow of the selected route</h3><div class="evidence-line"><b>Gross inflow ${money(current.grossProceeds, true)}</b> − fees from cash ${money(current.feesFromProceeds, true)} = net cash ${money(current.netCash, true)}</div><div class="evidence-line">Fees deducted from HL collateral ${money(current.feesFromCollateral, true)} · total upfront fees ${money(current.fees, true)}</div>` : ''}${all ? `<h3>All evaluated candidates · ${result.plans.length}</h3><p>Routes of the same kind are evaluated separately for each mix of deposits, collateral and sales.</p>${[...result.feasible, ...result.plans.filter((p) => !p.feasible)].map((p) => `<div class="evidence-line"><b>${p.feasible ? 'Feasible' : 'Excluded'} · ${esc(planName(p))}</b><br>Net cash ${money(p.netCash)} · fees ${money(p.fees, true)} · SOL sold ${num(p.solSold)} · new debt ${money(p.newDebt)}${p.feasible ? '' : '<br>' + esc(rejectionText(p))}</div>`).join('')}` : ''}<div class="dialog-disclaimer">${isImported ? 'Not supported: execution, signing or sending; simulation of the Hyperliquid order and withdrawal legs; verification of CCTP delivery fees and minimums; real borrowing; full modelling of price moves, funding, slippage or liquidation risk.' : 'This synthetic scenario reads no account and nothing here is executed, signed or sent; live prices, liquidity, bridges, account modes and borrowing are not verified.'} ${isImported ? 'The rehearsal can simulate the Solana sell leg and the Kamino withdrawal read-only; Hyperliquid legs are listed, not simulated.' : 'The rehearsal is an on-screen walkthrough only.'}</div>`;
+    `<h3>Calculation rules</h3><ul><li>Net cash = withdrawals + sales + new debt − fees paid from cash</li><li>The short's notional is not cash. Short-reduction fees are deducted from HL collateral separately.</li><li>HL buffer = remaining collateral − short notional × assumed 10% reserve. It is not a liquidation price or protocol health metric.</li><li>${isImported ? `Keeping net exposure means selling the same SOL quantity that the short is reduced by. Starting net exposure: ${num(portfolio.solana.sol - portfolio.hyperliquid.shortSol)} SOL.` : 'Keeping net exposure means selling the same SOL quantity that the short is reduced by, so the starting net SOL exposure is preserved. The starting ratio is 1:1.'}</li><li>Net USDC is assumed to arrive in a Solana wallet, not as fiat in a bank account.</li><li>Carry given up per route = short reduced × mark × funding rate (7-day average, annualised) + deposit withdrawn × supply APY, at today's rates. It is shown on each route and not used for ranking.</li><li>A fixed set of combinations is evaluated and sorted by lowest upfront fees. This is not a global optimum or investment advice.</li></ul><h3>Estimated fees and borrowing</h3><p>Model fees: deposit withdrawal ${money(portfolio.fees.lendingWithdraw, true)} · SOL sale ${(portfolio.fees.solSaleBps / 100).toFixed(2)}% · short reduction ${(portfolio.fees.hlCloseBps / 100).toFixed(2)}%${isImported && imported?.hyperliquid?.reported?.fees ? ` (your Hyperliquid taker rate ${(imported.hyperliquid.reported.fees.takerRate * 10_000).toFixed(3)} bps, rounded up to the basis point)` : ''} · HL transfer $1.00 (a placeholder, not a CCTP quote: Circle's Solana delivery has a higher forwarding fee and a minimum) · loan origination $0.50. New debt shows one day of interest at an assumed 8% APR; total interest is unknown without a repayment date. There is no real borrowing adapter.${isImported ? '' : ' Carry in this scenario uses a synthetic 8% funding rate and 5% supply APY.'}</p>${current ? `<h3>Cash flow of the selected route</h3><div class="evidence-line"><b>Gross inflow ${money(current.grossProceeds, true)}</b> − fees from cash ${money(current.feesFromProceeds, true)} = net cash ${money(current.netCash, true)}</div><div class="evidence-line">Fees deducted from HL collateral ${money(current.feesFromCollateral, true)} · total upfront fees ${money(current.fees, true)}</div>` : ''}${all ? `<h3>All evaluated candidates · ${result.plans.length}</h3><p>Routes of the same kind are evaluated separately for each mix of deposits, collateral and sales.</p>${[...result.feasible, ...result.plans.filter((p) => !p.feasible)].map((p) => `<div class="evidence-line"><b>${p.feasible ? 'Feasible' : 'Excluded'} · ${esc(planName(p))}</b><br>Net cash ${money(p.netCash)} · fees ${money(p.fees, true)} · SOL sold ${num(p.solSold)} · new debt ${money(p.newDebt)}${p.feasible ? '' : '<br>' + esc(rejectionText(p))}</div>`).join('')}` : ''}<div class="dialog-disclaimer">${isImported ? 'Not supported: execution, signing or sending; simulation of the Hyperliquid order and withdrawal legs; verification of CCTP delivery fees and minimums; real borrowing; full modelling of price moves, funding, slippage or liquidation risk.' : 'This synthetic scenario reads no account and nothing here is executed, signed or sent; live prices, liquidity, bridges, account modes and borrowing are not verified.'} ${isImported ? 'The rehearsal can simulate the Solana sell leg and the Kamino withdrawal read-only; Hyperliquid legs are listed, not simulated.' : 'The rehearsal is an on-screen walkthrough only.'}</div>`;
   openDialog(
     'Where the numbers come from',
     body,
@@ -588,26 +588,34 @@ function notSimulatedReason(step) {
           ? 'Not simulated: borrowing is a comparison only'
           : 'Not simulated';
 }
-const simulatable = (step) => step.action.startsWith('Sell SOL') || step.action.startsWith('Withdraw lending');
+const simulatable = (step) => step.action.startsWith('Sell SOL') || step.action.startsWith('Withdraw lending') || step.action.startsWith('Reduce SOL short');
+function bookPreviewText(result) {
+  const rate = imported?.hyperliquid?.reported?.fees?.takerRate;
+  const fee = rate == null || result.averagePrice == null ? null : result.filled * result.averagePrice * rate;
+  return `Book preview · buying back ${num(result.filled)} SOL walks ${result.levelsUsed} level${result.levelsUsed === 1 ? '' : 's'} to an average ${money(result.averagePrice ?? 0, true)} (${result.slippageBps ?? 0} bps above best ask ${money(result.bestAsk, true)}; plan mark ${money(portfolio.hyperliquid.markPrice, true)}) · est. taker fee ${fee == null ? 'unknown' : money(fee, true)}${rate == null ? '' : ` at ${(rate * 10_000).toFixed(3)} bps`}${result.partial ? ` · only ${num(result.visibleDepth)} SOL visible in the top ${result.levelsUsed} levels; the rest is beyond the visible book` : ''} · no order placed`;
+}
 const kaminoShortfall = (result, step) => result.deliveredUsdc != null && result.deliveredUsdc < step.amount - 0.01;
 function simulationBlock(step) {
   if (!simulatable(step)) return `<p class="simulation-note">${esc(notSimulatedReason(step))}</p>`;
   const kamino = step.action.startsWith('Withdraw lending');
+  const hlPreview = step.action.startsWith('Reduce SOL short');
   const sim = rehearsal.simulation;
   const text = !sim
     ? ''
     : sim.pending
-      ? 'Simulating on Solana…'
+      ? hlPreview ? 'Reading the Hyperliquid book…' : 'Simulating on Solana…'
       : sim.error
-        ? `Simulation unavailable: ${sim.error}`
+        ? `${hlPreview ? 'Preview' : 'Simulation'} unavailable: ${sim.error}`
         : sim.result.ok
-          ? kamino
+          ? hlPreview
+            ? bookPreviewText(sim.result)
+            : kamino
             ? kaminoShortfall(sim.result, step)
               ? `Simulation delivered ${money(sim.result.deliveredUsdc, true)}, short of the plan ${money(step.amount, true)} · ${num(sim.result.unitsConsumed ?? 0)} CU · nothing was sent`
               : `Simulation succeeded · ${num(sim.result.unitsConsumed ?? 0)} CU · ${sim.result.deliveredUsdc != null ? `would deliver ${money(sim.result.deliveredUsdc, true)} (plan ${money(step.amount, true)}) · ` : ''}${sim.result.instructions.length} instructions: ${sim.result.instructions.map((label) => label.replace(/\[.*$/, '')).join(', ')} · ${sim.result.logCount} log lines · nothing was sent`
             : `Simulation succeeded · ${num(sim.result.unitsConsumed ?? 0)} CU · quoted ${money(sim.result.quotedUsdc, true)} USDC vs plan estimate ${money(step.amount * portfolio.solana.solPrice * (1 - portfolio.fees.solSaleBps / 10000), true)} · ${sim.result.logCount} log lines · nothing was sent`
           : `Simulation failed: ${sim.result.error}`;
-  return `<div class="simulation"><button id="simulate-step" class="secondary-button" type="button" ${sim?.pending ? 'disabled' : ''}>${kamino ? 'Simulate Kamino withdrawal (read-only)' : 'Simulate on Solana (read-only)'}</button><p id="simulation-result" class="simulation-note ${sim && !sim.pending && (sim.error || !sim.result.ok || (kamino && kaminoShortfall(sim.result, step))) ? 'error' : ''}">${esc(text)}</p></div>`;
+  return `<div class="simulation"><button id="simulate-step" class="secondary-button" type="button" ${sim?.pending ? 'disabled' : ''}>${hlPreview ? 'Preview fill on the Hyperliquid book (read-only)' : kamino ? 'Simulate Kamino withdrawal (read-only)' : 'Simulate on Solana (read-only)'}</button><p id="simulation-result" class="simulation-note ${sim && !sim.pending && (sim.error || !sim.result.ok || (kamino && kaminoShortfall(sim.result, step)) || (hlPreview && sim.result.partial)) ? 'error' : ''}">${esc(text)}</p></div>`;
 }
 async function runSimulation() {
   if (!rehearsal || !imported) return;
@@ -617,9 +625,11 @@ async function runSimulation() {
   current.simulation = { pending: true };
   renderRehearsal();
   try {
-    const result = step.action.startsWith('Withdraw lending')
-      ? await simulateKaminoWithdraw({ address: imported.solana.address, amountUsdc: step.amount })
-      : await simulateSellSol({ address: imported.solana.address, solAmount: step.amount });
+    const result = step.action.startsWith('Reduce SOL short')
+      ? await previewReduceShort({ quantity: step.amount })
+      : step.action.startsWith('Withdraw lending')
+        ? await simulateKaminoWithdraw({ address: imported.solana.address, amountUsdc: step.amount })
+        : await simulateSellSol({ address: imported.solana.address, solAmount: step.amount });
     if (rehearsal !== current || current.version !== revision) return;
     current.simulation = { result };
   } catch (error) {
@@ -917,7 +927,7 @@ function buildImportedPortfolio(solana, hyperliquid) {
     snapshot: { complete: true, ageSeconds: 0, maxAgeSeconds: 300 },
     solana: solana.state,
     hyperliquid: hyperliquid.state,
-    fees: { ...base.fees, lendingWithdraw: 0, solSaleBps: solana.quote.solSaleBps }, // Kamino charges no withdrawal fee
+    fees: { ...base.fees, lendingWithdraw: 0, solSaleBps: solana.quote.solSaleBps, hlCloseBps: hyperliquid.reported.fees?.closeBps ?? base.fees.hlCloseBps }, // Kamino charges no withdrawal fee; the short-reduction fee is the account's taker rate when known
     timing: base.timing,
   };
 }

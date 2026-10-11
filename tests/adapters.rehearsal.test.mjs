@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { simulateSellSol, simulateKaminoWithdraw, AdapterError } from '../web/adapters/rehearsal.mjs';
+import { previewReduceShort, simulateSellSol, simulateKaminoWithdraw, AdapterError } from '../web/adapters/rehearsal.mjs';
 
 const quote = JSON.parse(await readFile(new URL('./fixtures/jupiter-quote.json', import.meta.url), 'utf8'));
 const WALLET = 'DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK';
@@ -79,4 +79,41 @@ test('the Kamino withdrawal simulation posts to the same-origin function and map
   await assert.rejects(simulateKaminoWithdraw({ address: WALLET, amountUsdc: 25, fetchImpl: async () => Response.json({ error: 'No Kamino obligation' }, { status: 404 }) }), e => e instanceof AdapterError && /obligation/.test(e.message));
   await assert.rejects(simulateKaminoWithdraw({ address: 'bad', amountUsdc: 25, fetchImpl: () => assert.fail('must not fetch') }), e => e.code === 'INVALID_ADDRESS');
   await assert.rejects(simulateKaminoWithdraw({ address: WALLET, amountUsdc: 0, fetchImpl: () => assert.fail('must not fetch') }), e => e.code === 'INVALID_AMOUNT');
+});
+
+test('previews a short reduction by walking the live asks read-only: average price, slippage, levels and partial fills', async () => {
+  const book = JSON.parse(await readFile(new URL('./fixtures/hl-l2book.json', import.meta.url), 'utf8'));
+  const calls = [];
+  const fetchImpl = async (url, init = {}) => {
+    calls.push({ url, body: JSON.parse(init.body) });
+    assert.equal(url, 'https://api.hyperliquid.xyz/info');
+    assert.deepEqual(JSON.parse(init.body), { type: 'l2Book', coin: 'SOL' });
+    return Response.json(book);
+  };
+  const asks = book.levels[1];
+  const bestAsk = Number(asks[0].px), bestBid = Number(book.levels[0][0].px);
+  const small = await previewReduceShort({ quantity: 20, fetchImpl });
+  assert.equal(small.ok, true);
+  assert.equal(small.filled, 20);
+  assert.equal(small.averagePrice, bestAsk);
+  assert.equal(small.bestAsk, bestAsk);
+  assert.equal(small.bestBid, bestBid);
+  assert.equal(small.levelsUsed, 1);
+  assert.equal(small.slippageBps, 0);
+  assert.equal(small.partial, false);
+  assert.equal(small.bookTime, book.time);
+  let remaining = 2000, cost = 0, used = 0;
+  for (const level of asks) { const take = Math.min(remaining, Number(level.sz)); cost += take * Number(level.px); remaining -= take; used += 1; if (remaining <= 0) break; }
+  const large = await previewReduceShort({ quantity: 2000, fetchImpl });
+  assert.equal(large.averagePrice, Math.round((cost / 2000) * 10000) / 10000);
+  assert.equal(large.levelsUsed, used);
+  assert.ok(large.slippageBps >= 0);
+  const depth = asks.reduce((sum, level) => sum + Number(level.sz), 0);
+  const huge = await previewReduceShort({ quantity: 1_000_000, fetchImpl });
+  assert.equal(huge.partial, true);
+  assert.equal(huge.filled, Math.round(depth * 1e6) / 1e6);
+  assert.equal(huge.visibleDepth, Math.round(depth * 1e6) / 1e6);
+  assert.equal(calls.length, 3, 'one info read per preview and nothing else');
+  await assert.rejects(previewReduceShort({ quantity: 0, fetchImpl }), e => e.code === 'INVALID_AMOUNT');
+  await assert.rejects(previewReduceShort({ quantity: 1, fetchImpl: async () => Response.json({ levels: 'nope' }) }), e => e.code === 'INVALID_RESPONSE');
 });
