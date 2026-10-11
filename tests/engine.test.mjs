@@ -444,3 +444,27 @@ test('lot size and minimum order value are validated when present', () => {
     assert.ok(planExit(p, defaultConstraints()).errors.some(e => e.includes(`hyperliquid.${key}`)), `${key}=${value} should be rejected`);
   }
 });
+
+test('lot size and minimum order hold across a grid of lots, targets and constraints: placeable quantities, no NaN, feasible routes meet the target', () => {
+  let feasibleCount = 0;
+  for (const lotSize of [0.000001, 0.001, 0.01, 0.1, 1]) {
+    for (const target of [50, 500, 2000, 4498.75, 6000]) {
+      for (const preserveHedge of [true, false]) {
+        for (const wallet of [0, 1995]) {
+          const p = createDemoPortfolio(); p.hyperliquid.lotSize = lotSize; p.hyperliquid.minOrderUsd = 10; p.solana.wallet.usdc = wallet;
+          const result = planExit(p, { ...defaultConstraints(), target, preserveHedge });
+          assert.deepEqual(result.errors, [], `${lotSize}/${target}/${preserveHedge}/${wallet}: ${result.errors.join(' | ')}`);
+          const units = Math.round(lotSize * 1e6);
+          for (const plan of result.plans) {
+            for (const [key, value] of Object.entries(plan)) if (typeof value === 'number') assert.ok(Number.isFinite(value), `${plan.id}.${key} is ${value}`);
+            const reduced = Math.round(plan.shortReduced * 1e6);
+            assert.equal(reduced % units, 0, `${plan.id}: short reduction ${plan.shortReduced} is not a ${lotSize} multiple (lot ${lotSize}, target ${target})`);
+            if (plan.shortReduced > 0 && plan.feasible) assert.ok(plan.shortReduced * p.hyperliquid.markPrice >= 10 - 1e-9, `${plan.id}: feasible reduction below the minimum order`);
+            if (plan.feasible) { assert.ok(plan.netCash >= target, `${plan.id}: net ${plan.netCash} < target ${target}`); feasibleCount += 1; }
+          }
+        }
+      }
+    }
+  }
+  assert.ok(feasibleCount > 100, `grid produced ${feasibleCount} feasible plans`);
+});
