@@ -29,13 +29,13 @@ browser                                   Vercel
 
 ### adapters/hyperliquid.mjs (new, browser + tests)
 - Input: EVM address. Calls `clearinghouseState` and `allMids` (two POSTs, 8 s timeout each).
-- Accepts only: cross-margin, at most one perp position and it must be `SOL` with `szi < 0` (short) or no positions. Rejects isolated margin, non-SOL positions, longs, missing fields, non-finite numbers, with a reason string.
-- Output: `{ accountMode: 'standard', marginMode: 'cross', asset: 'SOL', shortSol, markPrice, collateral: marginSummary.accountValue, conservativeMarginRate: 0.10 (stated assumption), freeWithdrawable: min(withdrawable, collateral − required) , observedAt, source }`.
+- Accepts: cross-margin SOL short (`szi < 0`) or no SOL position. Other coins' positions are allowed; their `marginUsed` is deducted from equity and treated as locked (stated assumption). Rejects a SOL long, isolated-margin SOL, missing fields, non-finite numbers, and equity below the 10% model reserve, each with a reason code.
+- Output: `{ accountMode: 'standard', marginMode: 'cross', asset: 'SOL', shortSol, markPrice, collateral: accountValue − Σ marginUsed(non-SOL positions), conservativeMarginRate: 0.10 (stated assumption), freeWithdrawable: min(withdrawable, collateral − required), observedAt, source }`.
 - Does not sum spot and perp balances. No account mode is proven; the UI says "assumed standard account".
 
 ### adapters/solana.mjs (new, browser + tests)
 - Input: Solana address. Calls `getBalance` (publicnode), Kamino main-market obligations, Jupiter quote for 1 SOL → USDC.
-- Lending: sums USDC deposits in Kamino main market obligations; any borrow on any obligation → `debt > 0` → engine rejects with reason (existing rule). `withdrawCapacity = usdc` (no reserve-utilisation check; labelled).
+- Lending: for each Kamino main-market obligation, non-empty `state.deposits[]` (reserve ≠ system program) must all be the USDC reserve `D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59`; then `usdc += Number(refreshedStats.userTotalDeposit)`. A mixed-asset obligation is rejected (`UNSUPPORTED_OBLIGATION`). Any non-empty `state.borrows[]` or `refreshedStats.userTotalBorrow !== '0'` → `debt > 0` → engine rejects with the existing-debt rule. `withdrawCapacity = usdc` (no reserve-utilisation check; labelled).
 - Price: `solPrice` = Jupiter out/in for 1 SOL; `solSaleBps` = max(30, round(priceImpactPct × 10 000) + slippage 50) so the fee is never below the fixture.
 - Fees/timings not quoted by any API keep the fixture values and are labelled "assumption".
 - Output: `{ sol, solPrice, lending: { usdc, debt, withdrawCapacity }, borrow: { enabled: true, capacity: fixture rule 30% LTV of SOL value, maxLtv: 0.3 } }` plus `observedAt`, `sources`.

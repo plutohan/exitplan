@@ -210,8 +210,8 @@ export class AdapterError extends Error { constructor(code, message) }  // codes
 export async function importHyperliquid(address, { fetchImpl = globalThis.fetch, now = Date.now, timeoutMs = 8000 } = {})
 // → { evidence: 'imported', venue: 'hyperliquid', address, observedAt, source: 'Hyperliquid public info API',
 //     state: { accountMode: 'standard', marginMode: 'cross', asset: 'SOL', shortSol, markPrice, collateral, conservativeMarginRate: 0.1, freeWithdrawable },
-//     reported: { accountValue, withdrawable, marginUsed, entryPrice, liquidationPrice, leverage },
-//     assumptions: ['Standard account assumed; account mode is not verified by the API', 'Reserve is 10% of short notional, a model assumption, not the exchange maintenance margin'] }
+//     reported: { accountValue, withdrawable, marginUsed, entryPrice, liquidationPrice, leverage, otherPositions: [{ coin, marginUsed }] },
+//     assumptions: ['Standard account assumed; account mode is not verified by the API', 'Reserve is 10% of short notional, a model assumption, not the exchange maintenance margin', 'Margin used by other open positions is treated as locked and deducted from equity'] }
 ```
 - Consumes: `requiredMarginCents` from `../engine.mjs`.
 
@@ -242,6 +242,15 @@ test('normalises a cross-margin SOL short into the engine shape', async () => {
   const portfolio = { ...createDemoPortfolio(), evidence: 'imported', synthetic: false, hyperliquid: result.state };
   assert.deepEqual(planExit(portfolio, defaultConstraints()).errors, []);
 });
+test('other coins are allowed and their margin is deducted from equity', async () => {
+  const state = await fixture('hl-sol-short');
+  const others = state.assetPositions.filter(a => a.position.coin !== 'SOL');
+  assert.ok(others.length > 0, 'fixture should hold other positions');
+  const locked = others.reduce((sum, a) => sum + Number(a.position.marginUsed), 0);
+  const result = await importHyperliquid(ADDR, { fetchImpl: fetchFor(state) });
+  assert.equal(result.state.collateral, Math.round((Number(state.marginSummary.accountValue) - locked) * 100) / 100);
+  assert.deepEqual(result.reported.otherPositions.map(p => p.coin), others.map(a => a.position.coin));
+});
 test('an account with no positions imports as a zero short', async () => {
   const result = await importHyperliquid(ADDR, { fetchImpl: fetchFor(await fixture('hl-no-position')) });
   assert.equal(result.state.shortSol, 0);
@@ -252,7 +261,6 @@ test('rejects malformed address without fetching', async () => {
 });
 for (const [name, mutate, code] of [
   ['a long SOL position', s => { s.assetPositions[0].position.szi = '12.5'; }, 'UNSUPPORTED_POSITION'],
-  ['a non-SOL position', s => { s.assetPositions[0].position.coin = 'ETH'; }, 'UNSUPPORTED_POSITION'],
   ['isolated margin', s => { s.assetPositions[0].position.leverage.type = 'isolated'; }, 'ISOLATED_MARGIN'],
   ['equity below the 10% reserve', s => { s.marginSummary.accountValue = '1'; s.withdrawable = '0'; }, 'LEVERAGE_TOO_HIGH'],
   ['missing margin summary', s => { delete s.marginSummary; }, 'INVALID_RESPONSE'],
@@ -267,7 +275,7 @@ test('HTTP failure, bad JSON and timeout are distinct errors', async () => {
 });
 ```
 - [ ] **Step 3: Run** → fails: module missing.
-- [ ] **Step 4: Implement** `web/adapters/hyperliquid.mjs`: shared helpers `postJson(url, body, { fetchImpl, timeoutMs })` (AbortController + timer, status check, content-type check, 1 MB cap, JSON parse) and `decimal(value, name)` (string or number → finite number, else INVALID_RESPONSE). Logic: validate address `/^0x[0-9a-fA-F]{40}$/`; run both requests with `Promise.all`; `accountValue = decimal(marginSummary.accountValue)`; reject negative; positions: `assetPositions.map(a => a.position)`; if any `coin !== 'SOL'` or `szi > 0` → UNSUPPORTED_POSITION; if `leverage.type !== 'cross'` → ISOLATED_MARGIN; `shortSol = round6(-szi)`; `markPrice = round2(mids.SOL)`; `collateral = round2(accountValue)`; `required = requiredMarginCents(shortSol, markPrice, 0.1)`; if `required > Math.round(collateral*100)` → LEVERAGE_TOO_HIGH; `freeWithdrawable = Math.max(0, Math.min(round2(withdrawable), (Math.round(collateral*100) - required) / 100))`.
+- [ ] **Step 4: Implement** `web/adapters/hyperliquid.mjs`: shared helpers `postJson(url, body, { fetchImpl, timeoutMs })` (AbortController + timer, status check, content-type check, 1 MB cap, JSON parse) and `decimal(value, name)` (string or number → finite number, else INVALID_RESPONSE). Logic: validate address `/^0x[0-9a-fA-F]{40}$/`; run both requests with `Promise.all`; `accountValue = decimal(marginSummary.accountValue)`; reject negative; positions: `assetPositions.map(a => a.position)`; `sol = positions.find(p => p.coin === 'SOL')`; if `sol && Number(sol.szi) > 0` → UNSUPPORTED_POSITION (long is not a hedge); if `sol && sol.leverage.type !== 'cross'` → ISOLATED_MARGIN; `locked = Σ decimal(p.marginUsed)` over non-SOL positions; `shortSol = sol ? round6(-szi) : 0`; `markPrice = round2(mids.SOL)`; `collateral = round2(accountValue - locked)` (reject if < 0); `required = requiredMarginCents(shortSol, markPrice, 0.1)`; if `required > Math.round(collateral*100)` → LEVERAGE_TOO_HIGH; `freeWithdrawable = Math.max(0, Math.min(round2(withdrawable), (Math.round(collateral*100) - required) / 100))`.
 - [ ] **Step 5: Run** `node --test tests/adapters.hyperliquid.test.mjs` → pass. **Commit** `git add -A && git commit -m "adapters: Hyperliquid read-only import"`
 
 ---
@@ -293,8 +301,8 @@ export async function importSolana(address, { fetchImpl, now, timeoutMs } = {})
 ```
 - Fee rule: `solSaleBps = Math.max(30, 50 + Math.round(Number(priceImpactPct) * 10_000))` and it is also exported as `solSaleBpsFromQuote(quote)` so the UI can show it.
 
-- [ ] **Step 1: Capture fixtures.** `curl -s "https://api.kamino.finance/kamino-market/7u3HeHxYDLhnCoErrtycNokbQYbWGzLs6JSDqGAv5PfF/users/<WALLET>/obligations" > tests/fixtures/kamino-obligations.json` using the wallet from `docs/demo-addresses.md`; `curl -s "https://lite-api.jup.ag/swap/v1/quote?inputMint=So111…112&outputMint=EPjF…t1v&amount=1000000000&slippageBps=50" > tests/fixtures/jupiter-quote.json`. Open the Kamino fixture and record the exact paths of deposit mint, deposit amount, and borrows at the top of the adapter as constants `DEPOSITS_KEY`, `MINT_KEY`, `AMOUNT_KEY`, `BORROWS_KEY` (expected: `deposits[].mintAddress`, `deposits[].amount`, `borrows`). If the amount is in base units (6-decimal integer string) divide by 1e6; decide from the fixture and write it in the adapter comment.
-- [ ] **Step 2: Write failing tests** (same style as Task 5): normalises balance + deposits + quote into the engine shape and the engine accepts it; `reports debt when any obligation has borrows` (mutate fixture: push a borrow) → `state.lending.debt > 0` and `planExit` returns the existing-debt error; empty obligations `[]` → `lending.usdc === 0`; `rejects malformed address without fetching`; `fee never below 30 bps` (quote with `priceImpactPct: '0'` → 30... note 50+0=50 ≥ 30 so assert 50; with `'-0.01'` → 30); RPC error object `{ error: { message } }` → `HTTP_ERROR`; quote missing `outAmount` → `INVALID_RESPONSE`.
+- [ ] **Step 1: Capture fixtures.** `curl -s "https://api.kamino.finance/kamino-market/7u3HeHxYDLhnCoErrtycNokbQYbWGzLs6JSDqGAv5PfF/users/<WALLET>/obligations" > tests/fixtures/kamino-obligations.json` using the wallet from `docs/demo-addresses.md`; `curl -s "https://lite-api.jup.ag/swap/v1/quote?inputMint=So111…112&outputMint=EPjF…t1v&amount=1000000000&slippageBps=50" > tests/fixtures/jupiter-quote.json`. Kamino response shape (verified 2026-10-11): array of obligations; `state.deposits[]` has 8 slots, empty slot = `depositReserve` `11111111111111111111111111111111`; USDC reserve = `D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59`; `state.borrows[]` has 5 slots, empty = `borrowReserve` system program; `refreshedStats.userTotalDeposit` / `userTotalBorrow` are fresh human-decimal USD strings (use these, never `marketValueSf`, which can be stale). `[]` means no obligation in that market. Parser: an obligation whose non-empty deposits are all the USDC reserve contributes `Number(refreshedStats.userTotalDeposit)`; any other reserve → `UNSUPPORTED_OBLIGATION`; any non-empty borrow or `userTotalBorrow !== '0'` → `debt += Number(userTotalBorrow) || 0.01`.
+- [ ] **Step 2: Write failing tests** (same style as Task 5): normalises balance + deposits + quote into the engine shape and the engine accepts it; `reports debt when any obligation has borrows` (mutate fixture: set `state.borrows[0].borrowReserve` to the USDC reserve and `refreshedStats.userTotalBorrow` to `'100'`); `rejects a mixed-asset obligation` (set `state.deposits[1].depositReserve` to the SOL reserve `d4A2prbA2whesmvHaL88BH6Ewn5N4bTSU2Ze8P6Bc4Q`) → `state.lending.debt > 0` and `planExit` returns the existing-debt error; empty obligations `[]` → `lending.usdc === 0`; `rejects malformed address without fetching`; `fee never below 30 bps` (quote with `priceImpactPct: '0'` → 30... note 50+0=50 ≥ 30 so assert 50; with `'-0.01'` → 30); RPC error object `{ error: { message } }` → `HTTP_ERROR`; quote missing `outAmount` → `INVALID_RESPONSE`.
 - [ ] **Step 3–5:** implement, run `node --test tests/adapters.solana.test.mjs`, commit `"adapters: Solana read-only import (balance, Kamino, Jupiter)"`. Rounding: `sol = round6(lamports / 1e9)`, `solPrice = round2(outAmount / 1e6)`, `usdc = round2(sum)`, `capacity = round2(sol * solPrice * 0.3)`.
 
 ---
