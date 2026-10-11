@@ -149,7 +149,7 @@ for (const length of ['-1', '8x', 'Infinity', '2.4']) {
 test('byte cap applies to streamed multibyte bodies and cancels oversized input', async () => {
   let cancelled = false;
   const encoder = new TextEncoder();
-  const body = new ReadableStream({ start(controller) { controller.enqueue(encoder.encode('"' + '한'.repeat(2000))); controller.enqueue(encoder.encode('글'.repeat(1000) + '"')); }, cancel() { cancelled = true; } });
+  const body = new ReadableStream({ start(controller) { controller.enqueue(encoder.encode('"' + '€'.repeat(2000))); controller.enqueue(encoder.encode('€'.repeat(1000) + '"')); }, cancel() { cancelled = true; } });
   const app = createApp(assets, { interpretIntentImpl: () => assert.fail('must not run') });
   const response = await app.fetch(intentRequest({ body }));
   assert.equal(response.status, 413);

@@ -63,7 +63,7 @@ async function mount(t, { aiConfigured = false, intentResponse, marketResponse }
     calls.push(call);
     if (url.pathname === '/api/status') return json({ aiConfigured, version: '0.1.0', portfolioEvidence: 'scenario', executionEnabled: false });
     if (url.pathname === '/api/market') return marketResponse ? await marketResponse(call) : json({ error: 'Market snapshot unavailable' }, 502);
-    if (url.pathname === '/api/intent') return intentResponse ? await intentResponse(call) : json({ mode: 'unavailable', error: 'AI 미연결 — 아래 조건으로 직접 비교할 수 있습니다' }, 503);
+    if (url.pathname === '/api/intent') return intentResponse ? await intentResponse(call) : json({ mode: 'unavailable', error: 'AI is not configured — compare with the conditions below instead' }, 503);
     assert.fail(`Unexpected network request: ${call.method} ${url.href}`);
   };
   install('window', window);
@@ -146,12 +146,12 @@ test('real app initializes fixture values and reports unavailable AI honestly', 
   const ui = await mount(t);
   assert.deepEqual(currentConstraints(ui), defaultConstraints());
   assert.match(ui.get('#sol-price').textContent, /100\.00/);
-  assert.equal(ui.get('#ai-status').textContent, 'AI 미연결');
-  assert.match(ui.get('#intent-feedback').textContent, /직접 비교/);
+  assert.equal(ui.get('#ai-status').textContent, 'AI offline');
+  assert.match(ui.get('#intent-feedback').textContent, /adjust the conditions above directly/);
   assert.equal(ui.get('#rehearse').disabled, false);
   assert.equal(ui.get('.plan-card.selected').dataset.plan, planExit(createDemoPortfolio(), defaultConstraints()).best.id);
   assert.match(ui.get('#decision-content').textContent, /2,000/);
-  assert.match(ui.get('.demo-label').textContent, /실제 거래 없음/);
+  assert.match(ui.get('.demo-label').textContent, /No real transactions/);
   assertNoExecutionCalls(ui);
 });
 
@@ -163,8 +163,8 @@ test('guided scenarios make $5,000 infeasible with SOL retained and feasible aft
   assert.equal(ui.get('#target').value, '5000');
   assert.equal(ui.get('#preserve-sol').checked, true);
   assert.equal(ui.get('#preserve-hedge').checked, true);
-  assert.match(ui.get('#route-count').textContent, /조건 충족 0 \//);
-  assert.match(ui.get('#result-banner').textContent, /경로가 없어요/);
+  assert.match(ui.get('#route-count').textContent, /Feasible 0 \//);
+  assert.match(ui.get('#result-banner').textContent, /No route satisfies the current conditions/);
   assert.match(ui.get('#result-banner').textContent, /4,498\.75/);
   assert.equal(Boolean(ui.document.querySelector('.plan-card.selected')), false);
   assert.equal(ui.get('#rehearse').disabled, true);
@@ -178,7 +178,7 @@ test('guided scenarios make $5,000 infeasible with SOL retained and feasible aft
   assert.equal(ui.get('.plan-card.selected').dataset.plan, expected.best.id);
   assert.equal(ui.get('#rehearse').disabled, false);
   assert.match(ui.get('#decision-content').textContent, /5,000/);
-  assert.match(ui.get('#portfolio-caption').textContent, /순 SOL 노출 0 SOL/);
+  assert.match(ui.get('#portfolio-caption').textContent, /Net SOL exposure 0 SOL/);
   await ui.click('#guide-next');
   assert.equal(ui.get('#guide-count').textContent, '01 / 03');
   assert.deepEqual(currentConstraints(ui), defaultConstraints());
@@ -201,7 +201,7 @@ test('manual target and all constraint controls recalculate from current values,
   await ui.input('#target', 6000);
   assert.deepEqual(currentConstraints(ui), { target: 6000, maxNewDebt: 1000, preserveHedge: false, preserveSolQuantity: true, minHlBuffer: 2000, deadlineHours: 24 });
   expected = planExit(createDemoPortfolio(), currentConstraints(ui));
-  assert.equal(ui.get('#route-count').textContent, `조건 충족 ${expected.feasible.length} / ${expected.plans.length}`);
+  assert.equal(ui.get('#route-count').textContent, `Feasible ${expected.feasible.length} / ${expected.plans.length}`);
   assert.equal(Boolean(ui.document.querySelector('[data-target].selected')), false);
   await ui.input('#intent', 'Keep this only until reset');
   await ui.click('.reset-all');
@@ -216,19 +216,19 @@ test('selection is replaced after input changes and removed when no feasible rou
   const ui = await mount(t);
   await ui.click('[data-plan="paired-unwind"]');
   assert.equal(ui.get('.plan-card.selected').dataset.plan, 'paired-unwind');
-  assert.match(ui.get('#decision-content').textContent, /현물·숏 함께 축소/);
+  assert.match(ui.get('#decision-content').textContent, /Trim spot and short together/);
   await ui.input('#target', 1000);
   assert.equal(ui.get('.plan-card.selected').dataset.plan, 'withdraw-lending');
   assert.match(ui.get('#decision-content').textContent, /1,000/);
   await ui.input('#target', 1000000);
   assert.equal(Boolean(ui.document.querySelector('.plan-card.selected')), false);
   assert.equal(ui.get('#rehearse').disabled, true);
-  assert.match(ui.get('#decision-content').textContent, /선택 가능한 경로 없음/);
+  assert.match(ui.get('#decision-content').textContent, /No selectable route/);
   assert.ok([...ui.document.querySelectorAll('.position-after')].every(el => el.textContent.startsWith('—')));
   const rejected = ui.get('.plan-card.rejected');
   await ui.click(rejected);
   assert.equal(ui.get('#detail-dialog').open, true);
-  assert.match(ui.get('#dialog-title').textContent, /제외된 이유/);
+  assert.match(ui.get('#dialog-title').textContent, /Why this route was excluded/);
   assert.equal(Boolean(ui.document.querySelector('.plan-card.selected')), false);
   assert.equal(ui.get('#rehearse').disabled, true);
 });
@@ -236,13 +236,13 @@ test('selection is replaced after input changes and removed when no feasible rou
 test('503 intent failures do not fake AI parsing or alter constraints', async t => {
   const ui = await mount(t);
   const before = currentConstraints(ui);
-  await ui.input('#intent', 'SOL은 팔지 않고 5,000달러가 필요해');
+  await ui.input('#intent', 'I need $5,000 without selling SOL');
   await ui.event('#intent-form', 'submit');
   assert.equal(ui.calls.filter(call => call.path === '/api/intent').length, 1);
   assert.deepEqual(JSON.parse(ui.calls.find(call => call.path === '/api/intent').body).currentConstraints, before);
-  assert.equal(ui.get('#ai-status').textContent, 'AI 미연결');
-  assert.match(ui.get('#intent-feedback').textContent, /AI 미연결/);
-  assert.match(ui.get('#intent-feedback').textContent, /직접 비교/);
+  assert.equal(ui.get('#ai-status').textContent, 'AI offline');
+  assert.match(ui.get('#intent-feedback').textContent, /AI offline/);
+  assert.match(ui.get('#intent-feedback').textContent, /adjust the conditions above directly/);
   assert.deepEqual(currentConstraints(ui), before);
   assert.equal(Boolean(ui.document.querySelector('#apply-intent')), false);
   assert.equal(ui.get('#intent-submit').disabled, false);
@@ -250,16 +250,16 @@ test('503 intent failures do not fake AI parsing or alter constraints', async t 
 });
 
 function aiProposal(constraints, extra = {}) {
-  return { mode: 'ai', constraints: { ...defaultConstraints(), ...constraints }, questions: [], explanation: '요청한 조건을 적용하기 전에 확인해 주세요', requiresConfirmation: true, ...extra };
+  return { mode: 'ai', constraints: { ...defaultConstraints(), ...constraints }, questions: [], explanation: 'Please confirm before applying', requiresConfirmation: true, ...extra };
 }
 
 test('AI suggestions stay proposals until confirmed and cancel preserves current controls', async t => {
   const ui = await mount(t, { aiConfigured: true, intentResponse: () => json(aiProposal({ target: 5000, preserveSolQuantity: true })) });
-  assert.equal(ui.get('#ai-status').textContent, 'AI 연결됨');
-  await ui.input('#intent', 'SOL을 유지하면서 5,000달러');
+  assert.equal(ui.get('#ai-status').textContent, 'AI connected');
+  await ui.input('#intent', 'Keep SOL and raise $5,000');
   await ui.event('#intent-form', 'submit');
   assert.deepEqual(currentConstraints(ui), defaultConstraints());
-  assert.match(ui.get('#intent-feedback').textContent, /이렇게 변경할까요/);
+  assert.match(ui.get('#intent-feedback').textContent, /Apply these changes\?/);
   assert.equal(ui.get('#apply-intent').disabled, false);
   await ui.click('#dismiss-intent');
   assert.deepEqual(currentConstraints(ui), defaultConstraints());
@@ -269,18 +269,18 @@ test('AI suggestions stay proposals until confirmed and cancel preserves current
   assert.equal(ui.get('#target').value, '5000');
   assert.equal(ui.get('#preserve-sol').checked, true);
   assert.equal(ui.get('#rehearse').disabled, true);
-  assert.match(ui.get('#intent-feedback').textContent, /확인한 조건을 적용/);
+  assert.match(ui.get('#intent-feedback').textContent, /Applied the confirmed conditions/);
   assertNoExecutionCalls(ui);
 });
 
 test('AI clarification cannot be applied and model text is escaped', async t => {
   const ui = await mount(t, {
     aiConfigured: true,
-    intentResponse: () => json(aiProposal({ target: 5000 }, { explanation: '<img src=x onerror="alert(1)">', questions: ['대출을 허용할까요? <script>bad()</script>'] }))
+    intentResponse: () => json(aiProposal({ target: 5000 }, { explanation: '<img src=x onerror="alert(1)">', questions: ['Allow borrowing? <script>bad()</script>'] }))
   });
-  await ui.input('#intent', '필요한 만큼 확보해 줘');
+  await ui.input('#intent', 'Raise whatever is needed');
   await ui.event('#intent-form', 'submit');
-  assert.match(ui.get('#intent-feedback').textContent, /먼저 확인이 필요/);
+  assert.match(ui.get('#intent-feedback').textContent, /Needs confirmation first/);
   assert.equal(Boolean(ui.document.querySelector('#apply-intent')), false);
   assert.equal(Boolean(ui.get('#intent-feedback').querySelector('img,script')), false);
   assert.match(ui.get('#intent-feedback').textContent, /<img/);
@@ -291,7 +291,7 @@ for (const change of ['target edit', 'reset']) {
   test(`late AI response is ignored after ${change}`, async t => {
     const pending = deferred();
     const ui = await mount(t, { aiConfigured: true, intentResponse: () => pending.promise });
-    await ui.input('#intent', '5,000달러가 필요해');
+    await ui.input('#intent', 'I need $5,000');
     await ui.event('#intent-form', 'submit');
     assert.equal(ui.get('#intent-submit').disabled, true);
     if (change === 'reset') await ui.click('.reset-all');
@@ -315,7 +315,7 @@ test('AI result is also ignored when controls change while the response body is 
     aiConfigured: true,
     intentResponse: () => ({ ok: true, status: 200, json: () => { decoding = true; return body.promise; } })
   });
-  await ui.input('#intent', '5,000달러');
+  await ui.input('#intent', '$5,000');
   await ui.event('#intent-form', 'submit');
   assert.equal(decoding, true);
   await ui.input('#target', 1000);
@@ -331,10 +331,10 @@ test('newer AI request wins even if an older response arrives last', async t => 
   const first = deferred(), second = deferred();
   let count = 0;
   const ui = await mount(t, { aiConfigured: true, intentResponse: () => (++count === 1 ? first.promise : second.promise) });
-  await ui.input('#intent', '첫 요청 5,000');
+  await ui.input('#intent', 'first request 5,000');
   await ui.event('#intent-form', 'submit');
   await ui.input('#target', 1000); // Invalidates the old request and permits another.
-  await ui.input('#intent', '새 요청 3,000');
+  await ui.input('#intent', 'new request 3,000');
   await ui.event('#intent-form', 'submit');
   second.resolve(json(aiProposal({ target: 3000 })));
   await flush();
@@ -356,8 +356,8 @@ test('rehearsal requires explicit steps, can be cancelled and replayed, and neve
   assert.equal(ui.get('#detail-dialog').open, true);
   assert.equal(ui.document.querySelectorAll('.rehearsal-step').length, 2);
   assert.equal(ui.document.querySelectorAll('.rehearsal-step.done').length, 0);
-  assert.match(ui.get('#dialog-body').textContent, /가상 리허설/);
-  assert.match(ui.get('#dialog-body').textContent, /변경하지 않아요/);
+  assert.match(ui.get('#dialog-body').textContent, /Synthetic rehearsal/);
+  assert.match(ui.get('#dialog-body').textContent, /does not change/);
   await ui.advance(60000);
   assert.equal(ui.document.querySelectorAll('.rehearsal-step.done').length, 0, 'Time passing alone must not simulate completed execution');
   await ui.click('#rehearsal-next');
@@ -369,9 +369,9 @@ test('rehearsal requires explicit steps, can be cancelled and replayed, and neve
   assert.equal(ui.document.querySelectorAll('.rehearsal-step.done').length, 0);
   await ui.click('#rehearsal-next');
   await ui.click('#rehearsal-next');
-  assert.match(ui.get('#dialog-title').textContent, /리허설을 마쳤어요/);
-  assert.match(ui.get('#dialog-body').textContent, /예상 순현금/);
-  assert.doesNotMatch(ui.get('#dialog-body').textContent, /거래 완료|송금 완료|체결 완료|전송 완료/);
+  assert.match(ui.get('#dialog-title').textContent, /Rehearsal complete/);
+  assert.match(ui.get('#dialog-body').textContent, /Expected net cash/);
+  assert.doesNotMatch(ui.get('#dialog-body').textContent, /executed|transferred|sent|filled/i);
   assert.equal(ui.get('#position-cards').innerHTML, positions);
   assert.equal(ui.get('#decision-content').innerHTML, decision);
   await ui.click('#rehearsal-reset');
@@ -415,8 +415,8 @@ for (const [selector, value] of [['#target', ''], ['#target', -1], ['#target', '
     await ui.input(selector, value);
     assert.equal(Boolean(ui.document.querySelector('.plan-card.selected')), false);
     assert.equal(ui.get('#rehearse').disabled, true);
-    assert.match(ui.get('#result-banner').textContent, /입력값을 확인/);
-    assert.match(ui.get('#guide-title').textContent, /직접 조정/);
+    assert.match(ui.get('#result-banner').textContent, /Check your inputs/);
+    assert.match(ui.get('#guide-title').textContent, /Comparing your adjusted conditions/);
     await ui.click('.reset-all');
     assert.deepEqual(currentConstraints(ui), defaultConstraints());
     assert.equal(ui.get('#rehearse').disabled, false);
@@ -437,7 +437,7 @@ test('keyboard activation selects a valid route and opens rejected-route reasons
   await ui.click('#guide-next');
   await activate(ui.get('.plan-card.rejected'));
   assert.equal(ui.get('#detail-dialog').open, true);
-  assert.match(ui.get('#dialog-title').textContent, /제외된 이유/);
+  assert.match(ui.get('#dialog-title').textContent, /Why this route was excluded/);
   assert.equal(ui.get('#rehearse').disabled, true);
 });
 
@@ -451,7 +451,7 @@ test('public market reference is fetched only on click and never reprices the sy
   await ui.click('#refresh-market');
   assert.equal(ui.calls.filter(call => call.path === '/api/market').length, 1);
   assert.match(ui.get('#market-reference-value').textContent, /177\.25/);
-  assert.match(ui.get('#market-reference-value').textContent, /가상 계산에는 반영하지 않았어요/);
+  assert.match(ui.get('#market-reference-value').textContent, /the synthetic scenario was not repriced/);
   assert.equal(ui.get('#sol-price').textContent, 'SOL $100.00');
   assert.equal(ui.get('#decision-content').innerHTML, decision);
   assert.equal(ui.get('#position-cards').innerHTML, positions);
@@ -463,8 +463,8 @@ test('market lookup failure remains honest and does not change plans', async t =
   const ui = await mount(t);
   const decision = ui.get('#decision-content').innerHTML;
   await ui.click('#refresh-market');
-  assert.match(ui.get('#market-reference-value').textContent, /불러오지 못했어요/);
-  assert.match(ui.get('#market-reference-value').textContent, /\$100 가정으로 유지/);
+  assert.match(ui.get('#market-reference-value').textContent, /Public market price unavailable/);
+  assert.match(ui.get('#market-reference-value').textContent, /still assumes SOL \$100/);
   assert.equal(ui.get('#decision-content').innerHTML, decision);
   assert.equal(ui.get('#refresh-market').disabled, false);
 });
