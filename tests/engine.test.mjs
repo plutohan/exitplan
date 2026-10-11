@@ -336,3 +336,23 @@ test('paired routes list the leveraged short reduction before the spot sale', ()
   const paired = route(run({ target: 2000 }), 'paired-unwind');
   assert.deepEqual(paired.steps.map(step => step.action), ['Reduce SOL short by the paired quantity', 'Sell SOL for USDC']);
 });
+
+test('reducing the short alone and withdrawing the released margin is evaluated, and only allowed when net exposure may change', () => {
+  // Lending (3,000) plus free collateral (1,500 under the floor) cannot reach 5,000 while keeping every SOL;
+  // buying back part of the short frees 10% of its notional as withdrawable margin.
+  const blocked = run({ target: 5000, preserveSolQuantity: true, preserveHedge: true });
+  const blockedClose = blocked.plans.filter(plan => plan.shortReduced > 0 && plan.solSold === 0);
+  assert.ok(blockedClose.length > 0, 'close-short candidates must be enumerated');
+  assert.ok(blockedClose.every(plan => !plan.feasible && /net SOL exposure/.test(plan.rejections.join(' '))));
+  const allowed = run({ target: 5000, preserveSolQuantity: true, preserveHedge: false });
+  const closeOnly = allowed.feasible.filter(plan => plan.shortReduced > 0 && plan.solSold === 0);
+  assert.ok(closeOnly.length > 0, 'a close-short route must be feasible once exposure may change');
+  const best = closeOnly[0];
+  assert.equal(best.solAfter, 100);
+  assert.ok(best.shortAfter < 100);
+  assert.ok(best.netCash >= 5000);
+  assert.ok(best.steps.some(step => step.action === 'Reduce SOL short'));
+  assert.ok(best.steps.some(step => step.action.startsWith('Withdraw and transfer')));
+  assert.ok(best.hlBufferAfter >= 1500);
+  assert.ok(route(allowed, 'close-short'), 'a stable baseline id exists');
+});

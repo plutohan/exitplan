@@ -786,3 +786,17 @@ test('Phantom connect fills both addresses read-only, and says so when Phantom i
   assert.match(ui.get('#import-status').textContent, /Loaded/);
   assertNoExecutionCalls(ui);
 });
+
+test('a close-short route is named honestly and its short step is not called paired', async t => {
+  const ui = await mount(t);
+  await ui.click('[data-target="5000"]');
+  await ui.input('#preserve-sol', true, 'change');
+  await ui.input('#preserve-hedge', false, 'change');
+  const card = [...ui.document.querySelectorAll('.plan-card')].find(el => /Reduce short/.test(el.textContent));
+  assert.ok(card, 'a reduce-short route card is displayed');
+  assert.match(card.textContent, /released margin/);
+  await ui.click(card);
+  await ui.click('#rehearse');
+  assert.match(ui.get('#dialog-body').textContent, /Reduce SOL short/);
+  assert.doesNotMatch(ui.get('#dialog-body').textContent, /same amount/);
+});

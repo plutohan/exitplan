@@ -111,9 +111,10 @@ Baseline IDs are stable:
 - `paired-unwind`
 - `sell-sol` (rejected when it breaks the requested hedge)
 - `borrow-sol` (rejected when it exceeds the debt limit)
+- `close-short`: reduce the short alone and withdraw the collateral it releases (rejected while `preserveHedge` is on, because net exposure changes)
 - `no-action` when the target is zero
 
-Hybrid routes explore lending and free-collateral fractions at 0%, 25%, 50%, 75% and 100%. The final spot-sale quantity is sized with an integer binary search; additional variants include collateral newly released by a paired reduction and debt-limited mixed routes. Identical hybrid allocations are deduplicated. This is a bounded enumeration, not an exhaustive financial optimizer.
+Hybrid routes explore lending and free-collateral fractions at 0%, 25%, 50%, 75% and 100%, plus a lending + reduce-short + released-collateral variant per lending fraction. The final spot-sale quantity is sized with an integer binary search; additional variants include collateral newly released by a paired reduction and debt-limited mixed routes. Identical hybrid allocations are deduplicated. This is a bounded enumeration, not an exhaustive financial optimizer.
 
 All candidates are independently checked for cash target, debt cap, SOL preservation, hedge preservation, remaining buffer, fixture deadline, source capacity and retained-collateral borrowing capacity.
 

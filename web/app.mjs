@@ -75,6 +75,8 @@ function planName(p) {
   const hasHl = actions.some((s) => s.action.startsWith('Withdraw and transfer'));
   if (p.newDebt > 0)
     return walletPrefix + (hasLend || hasHl ? 'Withdraw deposits + borrow more' : 'Borrow against SOL');
+  if (p.shortReduced > 0 && p.solSold === 0)
+    return walletPrefix + (hasLend ? 'Reduce short + released margin + deposits' : 'Reduce short + released margin');
   if (p.solSold > 0 && p.shortReduced > 0)
     return (
       walletPrefix + (hasLend || hasHl ? 'Withdraw deposits + trim spot and short' : 'Trim spot and short together')
@@ -92,8 +94,10 @@ function stepName(s) {
       ? 'Withdraw deposited USDC'
       : s.action.startsWith('Sell SOL')
         ? 'Sell SOL spot'
-        : s.action.startsWith('Reduce SOL')
-          ? 'Reduce SOL short by the same amount'
+        : s.action === 'Reduce SOL short'
+          ? 'Reduce SOL short'
+          : s.action.startsWith('Reduce SOL')
+            ? 'Reduce SOL short by the same amount'
           : s.action.startsWith('Borrow')
             ? 'Borrow against SOL (comparison)'
             : 'Withdraw HL collateral → Solana';

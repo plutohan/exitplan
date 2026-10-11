@@ -163,7 +163,7 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
     const step = (venue, action, amount, unit) => steps.push({ venue, action, amount, unit });
     if (a.wallet) step('Solana wallet', 'Use USDC already in the wallet', dollars(a.wallet), 'USDC');
     if (a.lending) step('Solana lending (fixture)', 'Withdraw lending USDC', dollars(a.lending), 'USDC');
-    if (a.closed) step('Hyperliquid (fixture)', 'Reduce SOL short by the paired quantity', quantity(a.closed), 'SOL'); // leveraged leg first
+    if (a.closed) step('Hyperliquid (fixture)', a.sold ? 'Reduce SOL short by the paired quantity' : 'Reduce SOL short', quantity(a.closed), 'SOL'); // leveraged leg first
     if (a.sold) step('Solana (fixture)', 'Sell SOL for USDC', quantity(a.sold), 'SOL');
     if (a.borrowed) step('Solana lending (comparison only)', 'Borrow USDC against retained SOL', dollars(a.borrowed), 'USDC');
     if (a.hl) step('Hyperliquid → Solana (fixture)', 'Withdraw and transfer USDC collateral', dollars(a.hl), 'USDC');
@@ -223,6 +223,9 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
   const saleQuantity = minQuantity(initialSol, q => saleNet(q) >= need);
   add('sell-sol', 'Sell SOL without reducing short', allocation({ sold: saleQuantity }), 'sale');
   add('borrow-sol', 'Borrow against SOL (comparison only)', allocation({ borrowed: desired(need, fixedBorrowFee, borrowCapacity(0)) }), 'borrow');
+  // Reduce the short alone and withdraw the collateral it releases. This changes net exposure, so preserveHedge rejects it.
+  const withClosedOnly = (base, q) => { const a = { ...base, closed: q }; a.hl = desired(Math.max(0, target - cash(a)), fixedTransferFee, hlCapacity(q)); return a; };
+  add('close-short', 'Reduce short + withdraw released collateral', withClosedOnly(allocation(), minQuantity(initialShort, q => cash(withClosedOnly(allocation(), q)) >= target)), 'release');
 
   // Enumerate bounded hybrid grids, then size the final source to the target.
   // Every action is rechecked against all constraints; the grid makes no optimality claim.
@@ -258,6 +261,8 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
     };
     const releasedQuantity = minQuantity(pairedLimit, q => cash(withReleased(q)) >= target);
     add(`hybrid-release-${li}`, 'Paired unwind + released collateral', withReleased(releasedQuantity), 'hybrid', true);
+    const closedQuantity = minQuantity(initialShort, q => cash(withClosedOnly(base, q)) >= target);
+    add(`hybrid-close-${li}`, 'Lending + reduce short + released collateral', withClosedOnly(base, closedQuantity), 'hybrid', true);
   }
   }
 

@@ -1,6 +1,6 @@
 # Verification — 2026-10-11
 
-`node --test tests/*.test.mjs`: 170 tests passed, 0 failed.
+`node --test tests/*.test.mjs`: 172 tests passed, 0 failed.
 
 - 27 engine tests (deterministic planner, imported evidence, zero-short account, reserve helper) and 1 conservation grid over 650 feasible scenario plans
 - 13 Hyperliquid adapter tests, 7 Solana adapter tests, 4 rehearsal simulation tests, all on captured real API responses in `tests/fixtures/`
