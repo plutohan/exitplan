@@ -1065,3 +1065,26 @@ test('imported routes use the account taker rate for the short-reduction fee and
   assert.match(ui.get('#dialog-body').textContent, /short reduction 0\.04%/);
   assert.match(ui.get('#dialog-body').textContent, /your Hyperliquid taker rate/);
 });
+
+test('the pre-flight report is a plain-text document with checks, routes, the selected route and the deep link', async t => {
+  const ui = await mount(t, { externalResponse: external() });
+  assert.equal(ui.get('#copy-report').hasAttribute('hidden') || ui.get('#preflight').hasAttribute('hidden'), true, 'no report before an import');
+  await importPositions(ui);
+  await ui.input('#target', 500);
+  await ui.click('[data-plan="paired-unwind"]');
+  await ui.click('#copy-report');
+  const text = ui.get('#report-text').value;
+  assert.match(text, /^# ExitPlan pre-flight report/);
+  assert.match(text, /Read-only\. Nothing was signed or sent/);
+  assert.match(text, /Solana wallet .*DrED/);
+  assert.match(text, /Account mode: ok/);
+  assert.match(text, /Net exposure: warn/);
+  assert.match(text, /## Routes/);
+  assert.match(text, /\[selected\] .*Trim spot and short together — net \$500\.00/);
+  assert.match(text, /carry given up/);
+  assert.match(text, /## Rejected routes/);
+  assert.match(text, /#sol=DrED/);
+  assert.match(text, /target=500/);
+  assert.match(text, /Not financial advice/);
+  assert.match(ui.get('#toast').textContent, /Report (copied|ready)/);
+});
