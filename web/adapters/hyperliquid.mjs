@@ -10,7 +10,7 @@ const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 export async function importHyperliquid(address, { fetchImpl = globalThis.fetch, now = Date.now, timeoutMs = 8000 } = {}) {
   if (typeof address !== 'string' || !ADDRESS.test(address)) throw new AdapterError('INVALID_ADDRESS', 'Enter a Hyperliquid address: 0x followed by 40 hex characters');
   const options = { method: 'POST', fetchImpl, timeoutMs };
-  const [state, mids, abstraction, vault, spot, fundingHistory, userFees] = await Promise.all([
+  const [state, mids, abstraction, vault, spot, fundingHistory, userFees, meta] = await Promise.all([
     requestJson(HL_INFO_URL, { ...options, body: { type: 'clearinghouseState', user: address } }),
     requestJson(HL_INFO_URL, { ...options, body: { type: 'allMids' } }),
     requestJson(HL_INFO_URL, { ...options, body: { type: 'userAbstraction', user: address } }),
@@ -20,6 +20,8 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
     requestJson(HL_INFO_URL, { ...options, body: { type: 'fundingHistory', coin: 'SOL', startTime: now() - 7 * 86_400_000 } }).catch(() => undefined),
     // Fee input only: the account's own taker rate; a failed read falls back to the 5 bps model fee.
     requestJson(HL_INFO_URL, { ...options, body: { type: 'userFees', user: address } }).catch(() => undefined),
+    // Order constraints: SOL lot size (szDecimals) and asset index; a failed read falls back to the known 0.01 SOL lot.
+    requestJson(HL_INFO_URL, { ...options, body: { type: 'meta' } }).catch(() => undefined),
   ]);
   if (vault && typeof vault === 'object') {
     throw new AdapterError('VAULT_ADDRESS', `This address is a Hyperliquid vault (${String(vault.name ?? 'unnamed')}), not a user account; enter the address that holds your positions`);
@@ -117,6 +119,11 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
     }
   }
   const fundingApr = funding ? funding.apr : null;
+  const universe = meta && Array.isArray(meta.universe) ? meta.universe : null;
+  const assetIndex = universe ? universe.findIndex((u) => u && u.name === 'SOL') : -1;
+  const szDecimals = assetIndex >= 0 && Number.isInteger(Number(universe[assetIndex].szDecimals)) && Number(universe[assetIndex].szDecimals) >= 0 && Number(universe[assetIndex].szDecimals) <= 6 ? Number(universe[assetIndex].szDecimals) : null;
+  const lotSize = szDecimals == null ? 0.01 : Number((10 ** -szDecimals).toFixed(6));
+  const minOrderUsd = 10; // Hyperliquid's minimum order value
   let fees = null;
   if (userFees && typeof userFees === 'object') {
     const taker = Number(userFees.userCrossRate), maker = Number(userFees.userAddRate);
@@ -129,7 +136,8 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
     `Reserve is ${(reserveRate * 100).toFixed(reserveRate * 100 % 1 ? 2 : 0)}% of short notional (the larger of the exchange's 10% transfer floor and the position's initial margin rate), not the exchange maintenance margin`,
     "Other open positions lock the larger of their initial margin and 10% of their notional (the exchange's transfer rule), deducted from equity",
   ];
-  assumptions.push(fees ? `Short-reduction fee uses your Hyperliquid taker rate (${(fees.takerRate * 10_000).toFixed(3)} bps, rounded up to ${fees.closeBps} bps)` : 'Hyperliquid fee schedule unavailable at load; the model uses 5 bps for the short reduction');
+  assumptions.push(fees ? `Short-reduction fee uses your Hyperliquid taker rate (${(fees.takerRate * 10_000).toFixed(3)} bps before referral discount, rounded up to ${fees.closeBps} bps)` : 'Hyperliquid fee schedule unavailable at load; the model uses 5 bps for the short reduction');
+  assumptions.push(szDecimals == null ? 'Hyperliquid meta unavailable at load; SOL lot size assumed 0.01 SOL and the $10 minimum order applied' : `Short reductions are sized in ${lotSize} SOL lots (szDecimals ${szDecimals} from meta); reductions below Hyperliquid's $${minOrderUsd} minimum order are rejected`);
   assumptions.push(funding ? `Carry uses the 7-day average SOL funding, ${(funding.apr * 100).toFixed(2)}% per year over ${funding.samples} hourly samples (positive means longs pay shorts); it is an estimate at today's rates` : 'SOL funding history unavailable at load; carry on the short is unknown');
   if (crossCheck && !crossCheck.ok) assumptions.push(`Cross-check: spot USDC total minus cross maintenance margin ($${crossCheck.implied.toFixed(2)}) does not match the exchange's available-after-maintenance figure ($${crossCheck.available.toFixed(2)}); positions on other perp DEXs (HIP-3) or a snapshot skew are likely, and those positions are not modelled`);
   if (otherStables.length) assumptions.push(`Other stable collateral on HyperCore spot (${otherStables.map((s) => `${s.coin} ${s.total.toLocaleString('en-US', { maximumFractionDigits: 2 })}`).join(', ')}) is not modelled`);
@@ -141,8 +149,8 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
     address,
     observedAt: new Date(now()).toISOString(),
     source: 'Hyperliquid public info API',
-    state: { accountMode: unified ? 'unified' : 'standard', marginMode: 'cross', asset: 'SOL', shortSol, markPrice, collateral, conservativeMarginRate: reserveRate, freeWithdrawable, fundingApr },
-    reported: { accountMode, accountValue: round2(accountValue), withdrawable, spotUsdc, lockedMargin: locked, otherStables, spotSol, funding, crossCheck, fees, marginUsed: decimal(summary.totalMarginUsed ?? 0, 'totalMarginUsed'), ...solReport, otherPositions },
+    state: { accountMode: unified ? 'unified' : 'standard', marginMode: 'cross', asset: 'SOL', shortSol, markPrice, collateral, conservativeMarginRate: reserveRate, freeWithdrawable, fundingApr, lotSize, minOrderUsd },
+    reported: { accountMode, accountValue: round2(accountValue), withdrawable, spotUsdc, lockedMargin: locked, otherStables, spotSol, funding, crossCheck, fees, szDecimals, assetIndex: assetIndex >= 0 ? assetIndex : null, marginUsed: decimal(summary.totalMarginUsed ?? 0, 'totalMarginUsed'), ...solReport, otherPositions },
     assumptions,
   };
 }

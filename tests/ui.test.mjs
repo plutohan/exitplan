@@ -23,6 +23,7 @@ const hlUnifiedSpot = await loadFixture('hl-unified-spot');
 const hlFunding = await loadFixture('hl-funding-history');
 const hlFees = await loadFixture('hl-user-fees');
 const hlBook = await loadFixture('hl-l2book');
+const hlMeta = await loadFixture('hl-meta');
 const kaminoFixture = await loadFixture('kamino-obligations');
 const jupiterFixture = await loadFixture('jupiter-quote');
 const WALLET = 'DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK';
@@ -31,7 +32,7 @@ const EXTERNAL_HOSTS = ['api.hyperliquid.xyz', 'solana-rpc.publicnode.com', 'api
 const external = ({ hl = hlShort, kamino = kaminoFixture, jupiter = jupiterFixture, lamports = 3_219_600_000, fail = null, mode = 'disabled', spot = { balances: [] } } = {}) => async call => {
   const target = new URL(call.url);
   if (fail && target.host === fail) return new Response('down', { status: 500 });
-  if (target.host === 'api.hyperliquid.xyz') { const type = JSON.parse(call.body).type; return json(type === 'allMids' ? { SOL: '109.695' } : type === 'userAbstraction' ? mode : type === 'vaultDetails' ? null : type === 'spotClearinghouseState' ? spot : type === 'fundingHistory' ? hlFunding : type === 'userFees' ? hlFees : type === 'l2Book' ? hlBook : hl); }
+  if (target.host === 'api.hyperliquid.xyz') { const type = JSON.parse(call.body).type; return json(type === 'allMids' ? { SOL: '109.695' } : type === 'userAbstraction' ? mode : type === 'vaultDetails' ? null : type === 'spotClearinghouseState' ? spot : type === 'fundingHistory' ? hlFunding : type === 'userFees' ? hlFees : type === 'l2Book' ? hlBook : type === 'meta' ? hlMeta : hl); }
   if (target.host === 'solana-rpc.publicnode.com') return json({ jsonrpc: '2.0', id: 1, result: { context: { slot: 1 }, value: lamports } });
   if (target.host === 'api.kamino.finance' && target.pathname.endsWith('/reserves/metrics')) return json([{ reserve: 'D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59', totalSupply: '120702201.4', totalBorrow: '112626977.24', supplyApy: '0.0468228385' }]);
   if (target.host === 'api.kamino.finance') return json(kamino);
@@ -521,7 +522,7 @@ test('import by address loads both venues, labels plans IMPORTED and uses the qu
   assert.match(ui.get('.demo-label').textContent, /Imported/);
   assert.match(ui.get('.demo-label').textContent, /No real transactions/);
   assert.equal(ui.get('#load-positions').disabled, false);
-  assert.equal(ui.calls.filter(call => EXTERNAL_HOSTS.includes(call.host)).length, 12); // balance, Kamino obligations, Kamino reserve metrics, quote, wallet balances, clearinghouse, mids, account mode, vault check, spot balances, funding history, user fees
+  assert.equal(ui.calls.filter(call => EXTERNAL_HOSTS.includes(call.host)).length, 13); // balance, Kamino obligations, Kamino reserve metrics, quote, wallet balances, clearinghouse, mids, account mode, vault check, spot balances, funding history, user fees, meta
   assert.match(ui.get('#import-status').textContent, /\$336\.40 in wallet/);
   assertNoExecutionCalls(ui);
 });
@@ -1064,6 +1065,8 @@ test('imported routes use the account taker rate for the short-reduction fee and
   await ui.click('#open-evidence');
   assert.match(ui.get('#dialog-body').textContent, /short reduction 0\.04%/);
   assert.match(ui.get('#dialog-body').textContent, /your Hyperliquid taker rate/);
+  assert.match(ui.get('#dialog-body').textContent, /0\.01 SOL lots/);
+  assert.doesNotMatch(ui.get('#dialog-body').textContent, /assumed 10% reserve/);
 });
 
 test('the pre-flight report is a plain-text document with checks, routes, the selected route and the deep link', async t => {
@@ -1080,7 +1083,7 @@ test('the pre-flight report is a plain-text document with checks, routes, the se
   assert.match(text, /Account mode: ok/);
   assert.match(text, /Net exposure: warn/);
   assert.match(text, /## Routes/);
-  assert.match(text, /\[selected\] .*Trim spot and short together — net \$500\.00/);
+  assert.match(text, /\[selected\] .*Trim spot and short together — net \$50\d\.\d\d/); // lot-sized sale nets at or just above the target
   assert.match(text, /carry given up/);
   assert.match(text, /## Rejected routes/);
   assert.match(text, /#sol=DrED/);

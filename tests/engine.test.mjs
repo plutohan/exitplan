@@ -408,3 +408,39 @@ test('carry rates are validated: finite, funding within ±500%, supply APY withi
   assert.equal(r.plans.find(x => x.id === 'paired-unwind').carryPerYear, null);
   assert.equal(r.plans.find(x => x.id === 'withdraw-lending').carryPerYear, null);
 });
+
+test('a Hyperliquid lot size snaps every short reduction (and its paired sale) to placeable quantities', () => {
+  const plain = planExit(createDemoPortfolio(), defaultConstraints());
+  assert.equal(plain.plans.find(p => p.id === 'paired-unwind').shortReduced, 20.0602, 'no lot size: micro-SOL precision as before');
+  const lots = createDemoPortfolio(); lots.hyperliquid.lotSize = 0.01;
+  const result = planExit(lots, defaultConstraints());
+  const paired = result.plans.find(p => p.id === 'paired-unwind');
+  assert.equal(paired.shortReduced, 20.07, 'the smallest 0.01 multiple whose sale nets the target');
+  assert.equal(paired.solSold, 20.07);
+  assert.ok(paired.feasible);
+  for (const p of result.plans) {
+    if (p.shortReduced > 0) assert.equal(Math.round(p.shortReduced * 100) / 100, p.shortReduced, `${p.id}: short reduction ${p.shortReduced} is not a 0.01 multiple`);
+  }
+  const closeOnly = planExit(lots, { ...defaultConstraints(), preserveHedge: false }).plans.find(p => p.id === 'close-short');
+  assert.equal(Math.round(closeOnly.shortReduced * 100) / 100, closeOnly.shortReduced);
+  assert.ok(closeOnly.shortReduced > 0);
+});
+
+test('a minimum order value rejects short reductions the exchange would not accept, without hiding other routes', () => {
+  const p = createDemoPortfolio(); p.solana.wallet.usdc = 1995; p.hyperliquid.lotSize = 0.01; p.hyperliquid.minOrderUsd = 10;
+  const result = planExit(p, defaultConstraints());
+  const paired = result.plans.find(x => x.id === 'paired-unwind');
+  assert.equal(paired.shortReduced, 0.06);
+  assert.equal(paired.feasible, false);
+  assert.ok(paired.rejections.some(r => /\$10\.00 minimum order/.test(r)), paired.rejections.join(' | '));
+  assert.ok(result.plans.find(x => x.id === 'withdraw-lending').feasible);
+  const noMinimum = planExit({ ...p, hyperliquid: { ...p.hyperliquid, minOrderUsd: 0 } }, defaultConstraints());
+  assert.ok(noMinimum.plans.find(x => x.id === 'paired-unwind').feasible);
+});
+
+test('lot size and minimum order value are validated when present', () => {
+  for (const [key, value] of [['lotSize', 0], ['lotSize', -0.01], ['lotSize', 2], ['lotSize', 0.0000005], ['lotSize', 'x'], ['minOrderUsd', -1], ['minOrderUsd', Infinity]]) {
+    const p = createDemoPortfolio(); p.hyperliquid[key] = value;
+    assert.ok(planExit(p, defaultConstraints()).errors.some(e => e.includes(`hyperliquid.${key}`)), `${key}=${value} should be rejected`);
+  }
+});

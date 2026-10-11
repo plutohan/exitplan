@@ -4,7 +4,7 @@ These are public on-chain addresses found on 2026-10-11 through public APIs (Hyp
 
 ## Hyperliquid (cross-margin SOL short)
 
-ExitPlan verifies the account mode with `userAbstraction`. Only standard accounts (`disabled` or `default`) import; the others are rejected with the reason, which is itself worth showing in a demo.
+ExitPlan verifies the account mode with `userAbstraction`. Standard (`disabled` or `default`) and unified accounts import; portfolio margin and vaults are rejected with the reason, which is itself worth showing in a demo.
 
 | Address | Mode on 2026-10-11 | SOL short | Leverage | Account value | Withdrawable | Other positions |
 | --- | --- | ---: | ---: | ---: | ---: | --- |

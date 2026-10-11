@@ -14,23 +14,24 @@ You give ExitPlan a **cash goal plus the limits you refuse to break** (new-debt 
 - **Real transaction simulation, two legs.** In the rehearsal, the Solana sell leg builds an unsigned Jupiter swap for the entered wallet and runs Solana `simulateTransaction` (signature verification off, fresh blockhash). The Kamino withdrawal leg builds the real unsigned withdraw transaction with Kamino's SDK in a server function (create ATA if needed, refresh reserve, refresh obligation, withdraw and redeem), simulates it the same way, and reads the wallet's USDC token account from the simulation to report **what would actually arrive** against the plan. You see success or the exact program error, compute units and the instruction list. Nothing is ever sent.
 - **Fees from your account and a read-only fill preview on Hyperliquid.** The short-reduction fee is your own taker rate from the public `userFees` endpoint (rounded up to the basis point) instead of a fixture, and in the rehearsal the reduce-short step walks the live SOL order book to show the average buy-back price, slippage in basis points, levels used and the estimated fee. No order is placed; the withdrawal step still needs a signed request and stays unsimulated.
 - **Margin math that matches the exchange.** For a live four-position account the model's withdrawable equals Hyperliquid's reported withdrawable to the cent, and the mark comes from the position's own value; the liquidation estimate is anchored on the exchange's number.
-- **Deterministic route engine** that enumerates withdrawals, sales, paired unwinds, short-only reductions with released margin, and borrowing comparisons, with integer-cent arithmetic, fail-closed validation and 218 automated tests, including a 650-plan conservation grid.
+- **Deterministic route engine** that enumerates withdrawals, sales, paired unwinds, short-only reductions with released margin, and borrowing comparisons, with integer-cent arithmetic, fail-closed validation and 222 automated tests, including a 650-plan conservation grid.
 - **AI intent with confirmation.** Describe the goal in your own words; a server function turns it into a constraint proposal (OpenAI structured output, validated against a schema), and nothing applies until you confirm.
 - **Pre-flight readout.** After an import, a checklist grades what matters before any unwind: account mode verified, net exposure (flagged when not neutral), liquidation distance, HL margin buffer against your floor, Kamino reserve liquidity against your deposit, wallet USDC, other positions, and what is not simulated.
 - **Carry given up per route.** Every route shows the yearly carry it gives up at today's rates: funding on the SOL short reduced (7-day average from Hyperliquid's funding history) plus supply yield on the Kamino deposit withdrawn (reserve supply APY). Routes are still ranked by upfront fees; the carry figure is there to change the decision, not the sort.
 - **Copy-able pre-flight report.** One button turns the checks, every route with its fees and carry, the rejected routes with reasons and the deep link into a plain-text report to paste into a chat or a ticket.
+- **Placeable quantities.** Short reductions are sized in Hyperliquid's SOL lot (0.01 SOL, read from `meta`) and reductions below the $10 minimum order are rejected with the reason, so every route is one the exchange would accept.
 - **Liquidation price before and after.** The exchange's own liquidation price is shown at load, and after a route an estimate anchored on that price (maintenance margin = 1 / (2 × max leverage)) shows where it would move. It is labelled an estimate.
 - **Kamino withdraw capacity capped by reserve liquidity** read from Kamino's reserve metrics at load.
 - **Public Hyperliquid market reference** (SOL perp mid) shown next to the planning price, never silently substituted.
 
 ## What is not real (yet)
 
-- No execution. No wallet connection, signing, sending, bridging, borrowing or trading.
+- No execution. No signing, sending, bridging, borrowing or trading; the wallet button only reads addresses.
 - Hyperliquid legs are not simulated (they need signed exchange requests); the reduce-short step gets a read-only order-book preview, the withdrawal step is listed only.
-- Fees other than the Jupiter-quoted sale, the 10% margin reserve, durations and borrowing terms are model assumptions and are labelled as such in the app.
+- Fees other than the Jupiter-quoted sale and your Hyperliquid taker rate, the margin reserve rule, durations and borrowing terms are model assumptions and are labelled as such in the app.
 - **Standard and Unified Hyperliquid accounts.** The account mode is verified on HyperCore. For a Unified account the spot USDC total is the equity (it already contains the perps margin and unrealised PnL) and withdrawable is total minus hold, both exchange figures; the model cross-checks them against the exchange's available-after-maintenance figure and flags a mismatch (positions on other perp DEXs are not modelled). Other stable collateral (USDH, USDT0, USDE) and SOL held on HyperCore spot are reported but not modelled. Portfolio-margin accounts pool several collateral assets and are rejected with that explanation. Vault addresses (for example HLP) are rejected as not being user accounts. Every position reserves the larger of its initial margin and 10% of its notional, the exchange's transfer rule, which makes the model's free collateral match the exchange's reported withdrawable on real accounts; for the SOL short that rate is also what a route releases when it reduces the position.
 - Only Kamino obligations that hold USDC alone are supported; mixed-asset obligations and any existing borrow are rejected with a reason.
-- The 10% margin reserve mirrors Hyperliquid's 10%-of-notional withdrawal floor, not its maintenance margin. The after-route liquidation price is a model estimate for the SOL position alone, anchored on the exchange's number, with other positions held constant.
+- The margin reserve is max(10% of notional, the position's initial margin), Hyperliquid's transfer rule, not its maintenance margin. The after-route liquidation price is a model estimate for the SOL position alone, anchored on the exchange's number, with other positions held constant.
 - Carry is an estimate at today's rates (7-day average funding, current supply APY), shown per route and not used for ranking; funding changes hourly and the deposit yield changes with utilisation.
 - The minimum margin buffer only blocks routes that lower the Hyperliquid buffer; an account that already sits under the floor can still raise cash on Solana. On import, a floor above the current buffer is lowered to half the buffer and the app says so.
 - Ranking means lowest upfront fees among a bounded set of evaluated candidates (dozens, not all), not a global optimum or financial advice.
@@ -47,7 +48,7 @@ Requires Node.js 20+. The browser app has no dependencies; the Kamino simulation
 
 ```sh
 npm ci --ignore-scripts
-npm test                       # 218 tests: engine, adapters, server, UI
+npm test                       # 222 tests: engine, adapters, server, UI
 npx vercel dev                 # serves web/ and the api/ functions
 ```
 
@@ -98,7 +99,7 @@ Every adapter fails closed with a reason code; the UI never substitutes cached o
 
 ## Disclosure
 
-All commits are dated 2026-10-11 (UTC+4), inside the hackathon window, by a solo builder working with AI coding assistants. The synthetic engine and UI were generated that morning with OpenAI's app tooling and imported as the first commit, which is why the history starts from a complete snapshot; the real-data adapters, Vercel deployment, English copy and three independent reviews (one Claude, one Codex, one Claude Opus) followed the same day. No code predates the window. Public addresses listed in `docs/demo-addresses.md` belong to other people; they are read-only examples and are not ours.
+All commits are dated 2026-10-11 and 2026-10-12 (UTC+4), inside the hackathon window, by a solo builder working with AI coding assistants. The synthetic engine and UI were generated that morning with OpenAI's app tooling and imported as the first commit, which is why the history starts from a complete snapshot; the real-data adapters, Vercel deployment, English copy and independent reviews (Claude, Codex and Claude Opus, several rounds) followed over the two days. No code predates the window. Public addresses listed in `docs/demo-addresses.md` belong to other people; they are read-only examples and are not ours.
 
 ## Documents
 

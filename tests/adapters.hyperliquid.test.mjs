@@ -15,6 +15,7 @@ const fetchFor = (state, options = {}) => async (url, init) => {
   if (body.type === 'vaultDetails') { assert.equal(body.vaultAddress, ADDR); return Response.json(options.vault ?? null); }
   if (body.type === 'spotClearinghouseState') { assert.equal(body.user, ADDR); return Response.json(options.spot ?? { balances: [] }); }
   if (body.type === 'clearinghouseState') { assert.equal(body.user, ADDR); return Response.json(state); }
+  if (body.type === 'meta') { if (options.meta === 'error') return new Response('boom', { status: 500 }); return Response.json(options.meta ?? await fixture('hl-meta')); }
   if (body.type === 'userFees') { assert.equal(body.user, ADDR); if (options.fees === 'error') return new Response('boom', { status: 500 }); return Response.json(options.fees ?? await fixture('hl-user-fees')); }
   if (body.type === 'fundingHistory') { assert.equal(body.coin, 'SOL'); assert.ok(Number.isInteger(body.startTime)); if (options.funding === 'error') return new Response('boom', { status: 500 }); return Response.json(options.funding ?? await fixture('hl-funding-history')); }
   assert.fail('unexpected request ' + init.body);
@@ -274,4 +275,22 @@ test('imports the account taker rate as the short-reduction fee, rounded up to t
   assert.ok(down.assumptions.some(line => /fee schedule unavailable/i.test(line) && /5 bps/.test(line)), down.assumptions.join(' | '));
   const garbage = await importHyperliquid(ADDR, { fetchImpl: fetchFor(state, { fees: { userCrossRate: 'abc' } }) });
   assert.equal(garbage.reported.fees, null);
+});
+
+test('reads the SOL lot size and asset index from meta, falling back to the known 0.01 lot when meta is unavailable', async () => {
+  const state = await fixture('hl-sol-short');
+  const meta = await fixture('hl-meta');
+  const index = meta.universe.findIndex(u => u.name === 'SOL');
+  const result = await importHyperliquid(ADDR, { fetchImpl: fetchFor(state) });
+  assert.equal(result.reported.szDecimals, 2);
+  assert.equal(result.reported.assetIndex, index);
+  assert.equal(result.state.lotSize, 0.01);
+  assert.equal(result.state.minOrderUsd, 10);
+  assert.ok(result.assumptions.some(line => /0\.01 SOL lots/.test(line) && /\$10/.test(line)), result.assumptions.join(' | '));
+  const down = await importHyperliquid(ADDR, { fetchImpl: fetchFor(state, { meta: 'error' }) });
+  assert.equal(down.state.lotSize, 0.01);
+  assert.equal(down.reported.assetIndex, null);
+  assert.ok(down.assumptions.some(line => /lot size assumed/i.test(line)), down.assumptions.join(' | '));
+  const odd = await importHyperliquid(ADDR, { fetchImpl: fetchFor(state, { meta: { universe: [{ name: 'SOL', szDecimals: 3, maxLeverage: 20 }] } }) });
+  assert.equal(odd.state.lotSize, 0.001);
 });

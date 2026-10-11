@@ -94,6 +94,9 @@ function validate(portfolio, supplied) {
   const rate = (value, label, min, max) => { if (value === undefined || value === null) return; if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) errors.push(`${label} must be a finite number between ${min} and ${max}, or null when unknown.`); };
   rate(h?.fundingApr, 'hyperliquid.fundingApr', -5, 5);
   rate(s?.lending?.supplyApy, 'solana.lending.supplyApy', 0, 5);
+  // Exchange order constraints are optional: lot size snaps short reductions, the minimum order value rejects dust reductions.
+  if (h?.lotSize !== undefined && h?.lotSize !== null && (typeof h.lotSize !== 'number' || !Number.isFinite(h.lotSize) || h.lotSize <= 0 || h.lotSize > 1 || Math.abs(Math.round(h.lotSize * UNITS) - h.lotSize * UNITS) > 1e-6)) errors.push('hyperliquid.lotSize must be a positive multiple of 0.000001 SOL, at most 1 SOL, or null.');
+  if (h?.minOrderUsd !== undefined && h?.minOrderUsd !== null && (typeof h.minOrderUsd !== 'number' || !Number.isFinite(h.minOrderUsd) || h.minOrderUsd < 0 || h.minOrderUsd > 1_000_000)) errors.push('hyperliquid.minOrderUsd must be a finite non-negative number or null.');
   if (s?.sol * s?.solPrice > 1_000_000_000 || h?.shortSol * h?.markPrice > 1_000_000_000) errors.push('Position notional exceeds the supported scenario range.');
   for (const key of ['lendingWithdraw', 'hlTransfer', 'borrowFixed']) number(f?.[key], `fees.${key}`);
   for (const key of ['solSaleBps', 'hlCloseBps', 'borrowAprBps']) number(f?.[key], `fees.${key}`, { max: 10_000, scale: 1 });
@@ -148,13 +151,18 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
   const cash = a => a.wallet + a.lending - (a.lending ? fixedLendingFee : 0)
     + a.hl - (a.hl ? fixedTransferFee : 0) + saleNet(a.sold)
     + a.borrowed - (a.borrowed ? fixedBorrowFee : 0);
-  const minQuantity = (limit, meets) => {
+  // Smallest quantity (in units, stepping by `step` units) that satisfies `meets`; the largest placeable quantity when none does.
+  const minQuantity = (limit, meets, step = 1) => {
     if (meets(0)) return 0;
-    if (!meets(limit)) return limit;
-    let lo = 0, hi = limit;
-    while (lo < hi) { const mid = Math.floor((lo + hi) / 2); if (meets(mid)) hi = mid; else lo = mid + 1; }
-    return lo;
+    const maxSteps = Math.floor(limit / step);
+    if (maxSteps === 0) return 0;
+    if (!meets(maxSteps * step)) return maxSteps * step;
+    let lo = 1, hi = maxSteps;
+    while (lo < hi) { const mid = Math.floor((lo + hi) / 2); if (meets(mid * step)) hi = mid; else lo = mid + 1; }
+    return lo * step;
   };
+  const lotUnits = h.lotSize == null ? 1 : Math.max(1, Math.round(h.lotSize * UNITS));
+  const minOrderCents = h.minOrderUsd == null ? 0 : cents(h.minOrderUsd);
   const allocation = (updates = {}) => ({ wallet: walletUse, lending: 0, hl: 0, sold: 0, closed: 0, borrowed: 0, ...updates });
   const signatures = new Set();
   const add = (id, label, a, family, deduplicate = false) => {
@@ -187,6 +195,7 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
     if (a.lending > lendingCapacity) rejections.push('Lending withdrawal exceeds supplied capacity.');
     if (a.sold > sellable || a.closed > initialShort) rejections.push('Trade exceeds the available position quantity (0.01 SOL is kept for rent and fees).');
     if (a.hl > hlCapacity(a.closed)) rejections.push('HL withdrawal exceeds the scenario removable collateral limit.');
+    if (a.closed > 0 && minOrderCents > 0 && notional(a.closed, mark) < minOrderCents) rejections.push(`Short reduction of $${dollars(notional(a.closed, mark)).toFixed(2)} is below Hyperliquid's $${dollars(minOrderCents).toFixed(2)} minimum order.`);
     if (a.borrowed > borrowCapacity(a.sold)) rejections.push('Borrow amount exceeds the comparison-only collateral capacity.');
     const totalFees = proceedsFees + collateralFees;
     const fundingCarry = a.closed ? (fundingBps == null ? null : mulFloor(notional(a.closed, mark), fundingBps, 10_000)) : 0;
@@ -231,14 +240,14 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
   } else if (target > 0) {
   add('withdraw-lending', 'Withdraw lending USDC', allocation({ lending: desired(need, fixedLendingFee, lendingCapacity) }), 'lending');
   add('withdraw-hl', 'Withdraw free HL collateral', allocation({ hl: desired(need, fixedTransferFee, hlCapacity(0)) }), 'collateral');
-  const pairedQuantity = minQuantity(pairedLimit, q => saleNet(q) >= need);
+  const pairedQuantity = minQuantity(pairedLimit, q => saleNet(q) >= need, lotUnits);
   add('paired-unwind', 'Sell SOL + reduce matching short', allocation({ sold: pairedQuantity, closed: pairedQuantity }), 'paired');
   const saleQuantity = minQuantity(sellable, q => saleNet(q) >= need);
   add('sell-sol', 'Sell SOL without reducing short', allocation({ sold: saleQuantity }), 'sale');
   add('borrow-sol', 'Borrow against SOL (comparison only)', allocation({ borrowed: desired(need, fixedBorrowFee, borrowCapacity(0)) }), 'borrow');
   // Reduce the short alone and withdraw the collateral it releases. This changes net exposure, so preserveHedge rejects it.
   const withClosedOnly = (base, q) => { const a = { ...base, closed: q }; a.hl = desired(Math.max(0, target - cash(a)), fixedTransferFee, hlCapacity(q)); return a; };
-  add('close-short', 'Reduce short + withdraw released collateral', withClosedOnly(allocation(), minQuantity(initialShort, q => cash(withClosedOnly(allocation(), q)) >= target)), 'release');
+  add('close-short', 'Reduce short + withdraw released collateral', withClosedOnly(allocation(), minQuantity(initialShort, q => cash(withClosedOnly(allocation(), q)) >= target, lotUnits)), 'release');
 
   // Enumerate bounded hybrid grids, then size the final source to the target.
   // Every action is rechecked against all constraints; the grid makes no optimality claim.
@@ -254,7 +263,7 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
     for (const [hi, share] of fractions.entries()) {
       const hl = Math.min(Math.floor(hlCapacity(0) * share), desired(gap, fixedTransferFee, hlCapacity(0)));
       const withHl = { ...base, hl };
-      const q = minQuantity(pairedLimit, sold => cash({ ...withHl, sold, closed: sold }) >= target);
+      const q = minQuantity(pairedLimit, sold => cash({ ...withHl, sold, closed: sold }) >= target, lotUnits);
       add(`hybrid-paired-${li}-${hi}`, 'Lending + collateral + paired unwind', { ...withHl, sold: q, closed: q }, 'hybrid', true);
       const remainingGap = Math.max(0, target - cash(withHl));
       add(`hybrid-borrow-${li}-${hi}`, 'Lending + collateral + borrow (comparison only)', { ...withHl, borrowed: desired(remainingGap, fixedBorrowFee, borrowCapacity(0)) }, 'hybrid', true);
@@ -262,7 +271,7 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
       if (c.maxNewDebt > 0 && remainingGap > 0) {
         const debt = Math.min(cents(c.maxNewDebt), desired(remainingGap, fixedBorrowFee, borrowCapacity(0)));
         const mixed = { ...withHl, borrowed: debt };
-        const mixedQuantity = minQuantity(pairedLimit, sold => cash({ ...mixed, sold, closed: sold }) >= target);
+        const mixedQuantity = minQuantity(pairedLimit, sold => cash({ ...mixed, sold, closed: sold }) >= target, lotUnits);
         add(`hybrid-mixed-${li}-${hi}`, 'Lending + collateral + paired sale + borrow (comparison only)', { ...mixed, sold: mixedQuantity, closed: mixedQuantity }, 'hybrid', true);
       }
     }
@@ -272,9 +281,9 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
       a.hl = desired(Math.max(0, target - cash(a)), fixedTransferFee, hlCapacity(sold));
       return a;
     };
-    const releasedQuantity = minQuantity(pairedLimit, q => cash(withReleased(q)) >= target);
+    const releasedQuantity = minQuantity(pairedLimit, q => cash(withReleased(q)) >= target, lotUnits);
     add(`hybrid-release-${li}`, 'Paired unwind + released collateral', withReleased(releasedQuantity), 'hybrid', true);
-    const closedQuantity = minQuantity(initialShort, q => cash(withClosedOnly(base, q)) >= target);
+    const closedQuantity = minQuantity(initialShort, q => cash(withClosedOnly(base, q)) >= target, lotUnits);
     add(`hybrid-close-${li}`, 'Lending + reduce short + released collateral', withClosedOnly(base, closedQuantity), 'hybrid', true);
   }
   }
