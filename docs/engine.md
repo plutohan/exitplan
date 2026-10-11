@@ -116,7 +116,7 @@ Baseline IDs are stable:
 
 Hybrid routes explore lending and free-collateral fractions at 0%, 25%, 50%, 75% and 100%, plus a lending + reduce-short + released-collateral variant per lending fraction. The final spot-sale quantity is sized with an integer binary search; additional variants include collateral newly released by a paired reduction and debt-limited mixed routes. Identical hybrid allocations are deduplicated. This is a bounded enumeration, not an exhaustive financial optimizer.
 
-All candidates are independently checked for cash target, debt cap, SOL preservation, hedge preservation, remaining buffer, fixture deadline, source capacity and retained-collateral borrowing capacity.
+Sales never touch the last 0.01 SOL, which stays behind for rent and transaction fees. All candidates are independently checked for cash target, debt cap, SOL preservation, hedge preservation, remaining buffer, fixture deadline, source capacity and retained-collateral borrowing capacity.
 
 Accepted routes are ranked by total **upfront** fees, then less new debt, less SOL sold, fewer steps and a stable ID. At a zero target, the explicit no-action plan wins. Daily loan interest remains visible and is not converted into a universal “cheaper than selling” claim. Exposure, encumbrance, debt, future prices and duration affect the user's decision.
 

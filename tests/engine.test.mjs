@@ -356,3 +356,14 @@ test('reducing the short alone and withdrawing the released margin is evaluated,
   assert.ok(best.hlBufferAfter >= 1500);
   assert.ok(route(allowed, 'close-short'), 'a stable baseline id exists');
 });
+
+test('sales never size to the full SOL balance: 0.01 SOL stays for rent and fees', () => {
+  const p = createDemoPortfolio();
+  p.solana = { ...p.solana, sol: 2, lending: { usdc: 0, debt: 0, withdrawCapacity: 0 } };
+  p.hyperliquid = { ...p.hyperliquid, shortSol: 0 };
+  const result = run({ target: 100000, preserveHedge: false }, p);
+  assert.ok(result.plans.every(plan => plan.solSold <= 1.99), 'no plan may sell the last 0.01 SOL');
+  const sale = route(run({ target: 190, preserveHedge: false }, p), 'sell-sol');
+  assert.equal(sale.feasible, true);
+  assert.ok(sale.solAfter >= 0.01);
+});

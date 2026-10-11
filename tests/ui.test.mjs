@@ -800,3 +800,34 @@ test('a close-short route is named honestly and its short step is not called pai
   assert.match(ui.get('#dialog-body').textContent, /Reduce SOL short/);
   assert.doesNotMatch(ui.get('#dialog-body').textContent, /same amount/);
 });
+
+test('both addresses are validated before any network call', async t => {
+  const ui = await mount(t, { externalResponse: () => assert.fail('must not call any API with an invalid address') });
+  await ui.input('#source-import', true, 'change');
+  await ui.input('#solana-address', 'not-an-address');
+  await ui.input('#hl-address', HL_ADDRESS);
+  await ui.click('#load-positions');
+  assert.match(ui.get('#import-status').textContent, /Solana wallet address/);
+  await ui.input('#solana-address', WALLET);
+  await ui.input('#hl-address', '0x12');
+  await ui.click('#load-positions');
+  assert.match(ui.get('#import-status').textContent, /Hyperliquid address/);
+  assert.equal(ui.calls.filter(call => EXTERNAL_HOSTS.includes(call.host)).length, 0);
+});
+
+test('the plan link carries every constraint and a link restores them', async t => {
+  const ui = await mount(t, { externalResponse: external() });
+  await importPositions(ui);
+  await ui.input('#target', 700);
+  await ui.input('#preserve-sol', true, 'change');
+  await ui.click('#share-link');
+  const link = ui.get('#toast').textContent.match(/https?:\S+/)[0];
+  assert.match(link, /target=700/);
+  assert.match(link, /preserveSolQuantity=true/);
+  assert.match(link, /maxNewDebt=0/);
+  const restored = await mount(t, { externalResponse: external(), hash: link.slice(link.indexOf('#')) });
+  await flush(); await flush();
+  assert.equal(restored.get('#target').value, '700');
+  assert.equal(restored.get('#preserve-sol').checked, true);
+  assert.ok(restored.get('.evidence-badge').textContent.startsWith('IMPORTED'));
+});

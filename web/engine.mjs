@@ -178,7 +178,7 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
     if (estimatedHours > c.deadlineHours) rejections.push(`Fixture duration of ${estimatedHours} hours exceeds the ${c.deadlineHours}-hour deadline; this is not a delivery guarantee.`);
     if (a.wallet > walletCents) rejections.push('Wallet USDC exceeds the balance.');
     if (a.lending > lendingCapacity) rejections.push('Lending withdrawal exceeds supplied capacity.');
-    if (a.sold > initialSol || a.closed > initialShort) rejections.push('Trade exceeds the available position quantity.');
+    if (a.sold > sellable || a.closed > initialShort) rejections.push('Trade exceeds the available position quantity (0.01 SOL is kept for rent and fees).');
     if (a.hl > hlCapacity(a.closed)) rejections.push('HL withdrawal exceeds the scenario removable collateral limit.');
     if (a.borrowed > borrowCapacity(a.sold)) rejections.push('Borrow amount exceeds the comparison-only collateral capacity.');
     const totalFees = proceedsFees + collateralFees;
@@ -210,7 +210,8 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
     });
   };
   const desired = (amount, fixed, capacity) => amount > 0 ? Math.min(capacity, amount + fixed) : 0;
-  const pairedLimit = Math.min(initialSol, initialShort);
+  const sellable = Math.max(0, initialSol - units(0.01)); // 0.01 SOL stays behind for rent and transaction fees
+  const pairedLimit = Math.min(sellable, initialShort);
   if (target === 0) add('no-action', 'No withdrawal needed', allocation(), 'hold');
   if (target > 0 && need === 0) {
     // Free wallet USDC covers the whole target: one route, nothing else to enumerate.
@@ -220,7 +221,7 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
   add('withdraw-hl', 'Withdraw free HL collateral', allocation({ hl: desired(need, fixedTransferFee, hlCapacity(0)) }), 'collateral');
   const pairedQuantity = minQuantity(pairedLimit, q => saleNet(q) >= need);
   add('paired-unwind', 'Sell SOL + reduce matching short', allocation({ sold: pairedQuantity, closed: pairedQuantity }), 'paired');
-  const saleQuantity = minQuantity(initialSol, q => saleNet(q) >= need);
+  const saleQuantity = minQuantity(sellable, q => saleNet(q) >= need);
   add('sell-sol', 'Sell SOL without reducing short', allocation({ sold: saleQuantity }), 'sale');
   add('borrow-sol', 'Borrow against SOL (comparison only)', allocation({ borrowed: desired(need, fixedBorrowFee, borrowCapacity(0)) }), 'borrow');
   // Reduce the short alone and withdraw the collateral it releases. This changes net exposure, so preserveHedge rejects it.

@@ -10,7 +10,7 @@ ExitPlan takes a **cash goal plus the limits you refuse to break** (new-debt cap
 
 - **Real positions by address, Phantom connect, or a deep link.** Enter a Solana wallet and a Hyperliquid address, press *Connect Phantom (read-only)* (it reads the Solana address and the Phantom Perps 0x address, never signs), open a `#sol=…&hl=…&target=…` link, or press *Load public example*. The browser reads them read-only from public APIs: SOL balance (publicnode RPC), Kamino main-market USDC deposits and borrows (Kamino API), the SOL short, equity, withdrawable and other positions on Hyperliquid (public info API), the HyperCore account mode (`userAbstraction`), USDC already sitting in the wallet (Jupiter balances, used first at zero fee), and a live Jupiter quote for SOL → USDC.
 - **Real transaction simulation.** In the rehearsal, the Solana sell leg builds an unsigned Jupiter swap for the entered wallet and runs Solana `simulateTransaction` (signature verification off, fresh blockhash). You see success or the exact error, compute units and the quoted output. The transaction is never sent.
-- **Deterministic route engine** that enumerates withdrawals, sales, paired unwinds, short-only reductions with released margin, and borrowing comparisons, with integer-cent arithmetic, fail-closed validation and 172 automated tests, including a 650-plan conservation grid.
+- **Deterministic route engine** that enumerates withdrawals, sales, paired unwinds, short-only reductions with released margin, and borrowing comparisons, with integer-cent arithmetic, fail-closed validation and 175 automated tests, including a 650-plan conservation grid.
 - **AI intent with confirmation.** Describe the goal in your own words; a server function turns it into a constraint proposal (OpenAI structured output, validated against a schema), and nothing applies until you confirm.
 - **Liquidation price before and after.** The exchange's own liquidation price is shown at load, and after a route an estimate anchored on that price (maintenance margin = 1 / (2 × max leverage)) shows where it would move. It is labelled an estimate.
 - **Kamino withdraw capacity capped by reserve liquidity** read from Kamino's reserve metrics at load.
@@ -39,13 +39,40 @@ Requires Node.js 20+. The only dependency is LinkeDOM for DOM tests.
 
 ```sh
 npm ci --ignore-scripts
-npm test                       # 172 tests: engine, adapters, server, UI
+npm test                       # 175 tests: engine, adapters, server, UI
 npx vercel dev                 # serves web/ and the api/ functions
 ```
 
 AI needs two server-side environment variables, never in the browser: `OPENAI_API_KEY` and `OPENAI_MODEL`. Without them the AI panel says it is offline and everything else works.
 
+## Use the engine as a library
+
+`web/engine.mjs` is a dependency-free ES module (Node 20+ or any browser) with no I/O: give it a portfolio and constraints, get every evaluated route back with the reasons it was accepted or rejected.
+
+```js
+import { createDemoPortfolio, defaultConstraints, planExit } from './web/engine.mjs';
+
+const result = planExit(createDemoPortfolio(), { ...defaultConstraints(), target: 5000, preserveHedge: false });
+console.log(result.best.id, result.best.netCash, `${result.feasible.length} of ${result.plans.length} routes fit`);
+for (const plan of result.plans.filter(p => !p.feasible)) console.log(plan.id, plan.rejections);
+```
+
+The portfolio shape is documented in `docs/engine.md`; the adapters in `web/adapters/` show how to build one from public APIs.
+
 ## Architecture
+
+```mermaid
+flowchart LR
+  A[Solana address] --> S[adapters/solana.mjs<br/>RPC balance · Kamino obligations + liquidity · Jupiter quote + wallet balances]
+  B[Hyperliquid address] --> H[adapters/hyperliquid.mjs<br/>clearinghouseState · allMids · userAbstraction]
+  S --> P[imported portfolio]
+  H --> P
+  P --> E[engine.mjs<br/>pure route enumeration + constraint checks]
+  E --> U[app.mjs<br/>compare · reject reasons · suggestions · rehearsal]
+  U --> R[adapters/rehearsal.mjs<br/>Jupiter swap build → simulateTransaction]
+  U --> I[api/intent.js<br/>OpenAI structured output → proposal → confirm]
+```
+
 
 ```
 browser (web/)                                     Vercel functions (api/)

@@ -1,6 +1,6 @@
 import { createDemoPortfolio, defaultConstraints, planExit, requiredMarginCents } from './engine.mjs';
 import { importHyperliquid, estimateLiquidationAfter } from './adapters/hyperliquid.mjs';
-import { importSolana } from './adapters/solana.mjs';
+import { importSolana, isSolanaAddress } from './adapters/solana.mjs';
 import { simulateSellSol } from './adapters/rehearsal.mjs';
 
 const $ = (query, root = document) => root.querySelector(query);
@@ -866,6 +866,14 @@ function buildImportedPortfolio(solana, hyperliquid) {
 async function loadPositions() {
   const solanaAddress = $('#solana-address').value.trim(),
     hlAddress = $('#hl-address').value.trim();
+  if (!isSolanaAddress(solanaAddress)) {
+    setImportStatus('Enter a valid Solana wallet address (base58, 32–44 characters)', true);
+    return;
+  }
+  if (!/^0x[0-9a-fA-F]{40}$/.test(hlAddress)) {
+    setImportStatus('Enter a valid Hyperliquid address: 0x followed by 40 hex characters', true);
+    return;
+  }
   const sequence = ++importSequence,
     version = revision,
     button = $('#load-positions');
@@ -966,7 +974,9 @@ $('#connect-phantom').addEventListener('click', async () => {
   }
 });
 function planLink() {
-  return `${location.origin}/#sol=${encodeURIComponent(imported.solana.address)}&hl=${encodeURIComponent(imported.hyperliquid.address)}&target=${constraints.target}`;
+  const params = new URLSearchParams({ sol: imported.solana.address, hl: imported.hyperliquid.address });
+  for (const key of ['target', 'maxNewDebt', 'minHlBuffer', 'deadlineHours', 'preserveHedge', 'preserveSolQuantity']) params.set(key, String(constraints[key]));
+  return `${location.origin}/#${params.toString()}`;
 }
 $('#share-link').addEventListener('click', async () => {
   if (!imported) return;
@@ -992,8 +1002,17 @@ function applyDeepLink() {
   setSource('import');
   $('#solana-address').value = sol;
   $('#hl-address').value = hl;
-  if (Number.isFinite(target) && target > 0) {
-    constraints.target = target;
+  const patch = {};
+  for (const key of ['target', 'maxNewDebt', 'minHlBuffer', 'deadlineHours']) {
+    const value = Number(params.get(key));
+    if (params.has(key) && Number.isFinite(value) && value >= 0) patch[key] = value;
+  }
+  for (const key of ['preserveHedge', 'preserveSolQuantity']) {
+    if (params.get(key) === 'true' || params.get(key) === 'false') patch[key] = params.get(key) === 'true';
+  }
+  if (Number.isFinite(target) && target > 0) patch.target = target;
+  if (Object.keys(patch).length && !planExit(createDemoPortfolio(), { ...constraints, ...patch }).errors.length) {
+    constraints = { ...constraints, ...patch };
     markCustom();
     recalculate();
   }
