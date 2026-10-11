@@ -15,8 +15,24 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 const json = (body, status = 200) => Response.json(body, { status });
+const loadFixture = async name => JSON.parse(await readFile(new URL(`./fixtures/${name}.json`, import.meta.url), 'utf8'));
+const hlShort = await loadFixture('hl-sol-short');
+const kaminoFixture = await loadFixture('kamino-obligations');
+const jupiterFixture = await loadFixture('jupiter-quote');
+const WALLET = 'DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK';
+const HL_ADDRESS = '0x3de9a354243a94e10060a198c7179b8e5393b9a1';
+const EXTERNAL_HOSTS = ['api.hyperliquid.xyz', 'solana-rpc.publicnode.com', 'api.kamino.finance', 'lite-api.jup.ag'];
+const external = ({ hl = hlShort, kamino = kaminoFixture, jupiter = jupiterFixture, lamports = 3_219_600_000, fail = null } = {}) => async call => {
+  const target = new URL(call.url);
+  if (fail && target.host === fail) return new Response('down', { status: 500 });
+  if (target.host === 'api.hyperliquid.xyz') return json(JSON.parse(call.body).type === 'allMids' ? { SOL: '109.695' } : hl);
+  if (target.host === 'solana-rpc.publicnode.com') return json({ jsonrpc: '2.0', id: 1, result: { context: { slot: 1 }, value: lamports } });
+  if (target.host === 'api.kamino.finance') return json(kamino);
+  if (target.host === 'lite-api.jup.ag') return json(jupiter);
+  assert.fail('unexpected external request ' + call.url);
+};
 
-async function mount(t, { aiConfigured = false, intentResponse, marketResponse } = {}) {
+async function mount(t, { aiConfigured = false, intentResponse, marketResponse, externalResponse } = {}) {
   const { window } = parseHTML(html);
   const { document } = window;
   const calls = [];
@@ -29,7 +45,7 @@ async function mount(t, { aiConfigured = false, intentResponse, marketResponse }
   };
   // linkedom deliberately leaves browser-only form state and dialog methods to
   // the host. These shims implement only the behavior the application uses.
-  for (const input of document.querySelectorAll('input[type="checkbox"]')) {
+  for (const input of document.querySelectorAll('input[type="checkbox"], input[type="radio"]')) {
     Object.defineProperty(input, 'checked', { configurable: true, writable: true, value: input.hasAttribute('checked') });
   }
   for (const select of document.querySelectorAll('select')) {
@@ -59,8 +75,9 @@ async function mount(t, { aiConfigured = false, intentResponse, marketResponse }
   };
   const fetchMock = async (input, init = {}) => {
     const url = new URL(typeof input === 'string' ? input : input.url, 'https://exitplan.example');
-    const call = { path: url.pathname, method: init.method ?? 'GET', body: init.body, signal: init.signal };
+    const call = { url: url.href, host: url.host, path: url.pathname, method: init.method ?? 'GET', body: init.body, signal: init.signal };
     calls.push(call);
+    if (url.origin !== 'https://exitplan.example') return externalResponse ? await externalResponse(call) : assert.fail(`Unexpected external request: ${url.href}`);
     if (url.pathname === '/api/status') return json({ aiConfigured, version: '0.1.0', portfolioEvidence: 'scenario', executionEnabled: false });
     if (url.pathname === '/api/market') return marketResponse ? await marketResponse(call) : json({ error: 'Market snapshot unavailable' }, 502);
     if (url.pathname === '/api/intent') return intentResponse ? await intentResponse(call) : json({ mode: 'unavailable', error: 'AI is not configured — compare with the conditions below instead' }, 503);
@@ -106,7 +123,7 @@ async function mount(t, { aiConfigured = false, intentResponse, marketResponse }
   };
   const input = async (selector, value, type = 'input') => {
     const element = get(selector);
-    if (element.type === 'checkbox') element.checked = Boolean(value);
+    if (element.type === 'checkbox' || element.type === 'radio') element.checked = Boolean(value);
     else element.value = String(value);
     await event(element, type);
   };
@@ -138,7 +155,7 @@ function currentConstraints(ui) {
 }
 
 function assertNoExecutionCalls(ui) {
-  assert.ok(ui.calls.every(call => ['/api/status', '/api/intent', '/api/market'].includes(call.path)), 'Only capability, intent interpretation, and read-only market endpoints may be contacted');
+  assert.ok(ui.calls.every(call => ['/api/status', '/api/intent', '/api/market'].includes(call.path) || EXTERNAL_HOSTS.includes(call.host)), 'Only capability, intent interpretation, read-only market and public data endpoints may be contacted');
   assert.ok(ui.calls.every(call => call.path !== '/api/intent' || call.method === 'POST'));
 }
 
@@ -467,4 +484,74 @@ test('market lookup failure remains honest and does not change plans', async t =
   assert.match(ui.get('#market-reference-value').textContent, /still assumes SOL \$100/);
   assert.equal(ui.get('#decision-content').innerHTML, decision);
   assert.equal(ui.get('#refresh-market').disabled, false);
+});
+
+async function importPositions(ui) {
+  await ui.input('#source-import', true, 'change');
+  assert.equal(ui.get('#import-row').hasAttribute('hidden'), false);
+  await ui.input('#solana-address', WALLET);
+  await ui.input('#hl-address', HL_ADDRESS);
+  await ui.click('#load-positions');
+}
+
+test('import by address loads both venues, labels plans IMPORTED and uses the quote price', async t => {
+  const ui = await mount(t, { externalResponse: external() });
+  assert.equal(ui.get('#import-row').hasAttribute('hidden'), true);
+  assert.equal(ui.get('.evidence-badge').textContent, 'SCENARIO');
+  await importPositions(ui);
+  assert.match(ui.get('#import-status').textContent, /Loaded/);
+  assert.match(ui.get('#sol-price').textContent, /111\.88/);
+  assert.ok(ui.get('.evidence-badge').textContent.startsWith('IMPORTED'));
+  assert.match(ui.get('.demo-label').textContent, /Imported/);
+  assert.match(ui.get('.demo-label').textContent, /No real transactions/);
+  assert.equal(ui.get('#load-positions').disabled, false);
+  assert.equal(ui.calls.filter(call => EXTERNAL_HOSTS.includes(call.host)).length, 5);
+  assertNoExecutionCalls(ui);
+});
+
+test('import failure keeps the scenario and shows the reason', async t => {
+  const ui = await mount(t, { externalResponse: external({ fail: 'solana-rpc.publicnode.com' }) });
+  const plans = ui.get('#plans').innerHTML;
+  await importPositions(ui);
+  assert.match(ui.get('#import-status').textContent, /Could not load positions/);
+  assert.equal(ui.get('.evidence-badge').textContent, 'SCENARIO');
+  assert.equal(ui.get('#sol-price').textContent, 'SOL $100.00');
+  assert.equal(ui.get('#plans').innerHTML, plans);
+  assert.equal(ui.get('#load-positions').disabled, false);
+});
+
+test('import with debt shows the engine error and keeps the scenario', async t => {
+  const kamino = structuredClone(kaminoFixture);
+  kamino[0].state.borrows[0].borrowReserve = 'D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59';
+  kamino[0].refreshedStats.userTotalBorrow = '100';
+  const ui = await mount(t, { externalResponse: external({ kamino }) });
+  const plans = ui.get('#plans').innerHTML;
+  await importPositions(ui);
+  assert.match(ui.get('#import-status').textContent, /Existing lending debt/);
+  assert.equal(ui.get('.evidence-badge').textContent, 'SCENARIO');
+  assert.equal(ui.get('#plans').innerHTML, plans);
+});
+
+test('late import response is ignored after reset', async t => {
+  const pending = deferred();
+  const ui = await mount(t, { externalResponse: call => pending.promise.then(respond => respond(call)) });
+  await importPositions(ui);
+  assert.equal(ui.get('#load-positions').disabled, true);
+  await ui.click('.reset-all');
+  pending.resolve(external());
+  await flush(); await flush();
+  assert.equal(ui.get('.evidence-badge').textContent, 'SCENARIO');
+  assert.doesNotMatch(ui.get('#import-status').textContent, /Loaded/);
+  assert.equal(ui.get('#import-row').hasAttribute('hidden'), true);
+  assert.equal(ui.get('#load-positions').disabled, false);
+});
+
+test('switching back to the scenario restores fixture values', async t => {
+  const ui = await mount(t, { externalResponse: external() });
+  await importPositions(ui);
+  assert.match(ui.get('#sol-price').textContent, /111\.88/);
+  await ui.input('#source-scenario', true, 'change');
+  assert.equal(ui.get('#sol-price').textContent, 'SOL $100.00');
+  assert.equal(ui.get('.evidence-badge').textContent, 'SCENARIO');
+  assert.equal(ui.get('#import-row').hasAttribute('hidden'), true);
 });
