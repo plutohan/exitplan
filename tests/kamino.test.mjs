@@ -35,7 +35,7 @@ function fakeSdk({ obligation = { obligationAddress: 'Dhs7xv1M' }, simulation = 
 test('builds an unsigned Kamino withdrawal for the wallet and simulates it without sending', async () => {
   const result = await simulateKaminoWithdraw({ wallet: WALLET, amountUsdc: 1663.85 }, { sdk: fakeSdk(), rpcUrl: 'https://rpc.example', now: () => 1_791_741_027_000 });
   assert.equal(result.status, 200);
-  assert.deepEqual(result.body, { ok: true, error: null, unitsConsumed: 112573, logCount: 38, instructions: ['CreateUserAta[x]', 'RefreshReserve[r]', 'RefreshObligation[o]', 'withdrawObligationCollateralAndRedeemReserveCollateralV2'], amountUsdc: 1663.85, deliveredUsdc: 1663.85, observedAt: '2026-10-11T17:50:27.000Z', rpc: 'rpc.example', obligation: 'Dhs7xv1M' });
+  assert.deepEqual(result.body, { ok: true, error: null, unitsConsumed: 112573, logCount: 38, instructions: ['CreateUserAta[x]', 'RefreshReserve[r]', 'RefreshObligation[o]', 'withdrawObligationCollateralAndRedeemReserveCollateralV2'], amountUsdc: 1663.85, deliveredUsdc: 1663.85, observedAt: '2026-10-11T17:50:27.000Z', rpc: 'rpc.example', obligation: 'Dhs7xv1M', transactionBase64: 'WIRE:5' /* compute budget + 3 setup + withdraw */ });
   assert.deepEqual(calls.find(c => c[0] === 'build'), ['build', '1663850000', USDC_RESERVE, WALLET, true]);
   assert.deepEqual(calls.find(c => c[0] === 'load').slice(1), [KAMINO_MAIN_MARKET, 450]);
   const sim = calls.find(c => c[0] === 'simulateTransaction');

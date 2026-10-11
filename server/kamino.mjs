@@ -103,6 +103,7 @@ export async function simulateKaminoWithdraw(body, { sdk, loadSdkImpl = loadSdk,
         instructions: labels,
         amountUsdc,
         deliveredUsdc,
+        transactionBase64: wire, // the unsigned transaction that was simulated; never sent
         observedAt: new Date(now()).toISOString(),
         rpc: new URL(rpcUrl).host,
         obligation: String(obligation.obligationAddress ?? ''),

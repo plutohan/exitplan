@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { previewReduceShort, simulateSellSol, simulateKaminoWithdraw, AdapterError } from '../web/adapters/rehearsal.mjs';
+import { messageFromTransaction, inspectorUrl, previewReduceShort, simulateSellSol, simulateKaminoWithdraw, AdapterError } from '../web/adapters/rehearsal.mjs';
 
 const quote = JSON.parse(await readFile(new URL('./fixtures/jupiter-quote.json', import.meta.url), 'utf8'));
 const WALLET = 'DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK';
-const sequence = ({ swapStatus = 200, simulateValue = { err: null, logs: ['a', 'b', 'c'], unitsConsumed: 123456 } } = {}) => {
+const sequence = ({ swapStatus = 200, simulateValue = { err: null, logs: ['a', 'b', 'c'], unitsConsumed: 123456 }, swapTransaction = 'AQAA' } = {}) => {
   const calls = [];
   const fetchImpl = async (url, init = {}) => {
     const target = new URL(url);
@@ -19,12 +19,12 @@ const sequence = ({ swapStatus = 200, simulateValue = { err: null, logs: ['a', '
       assert.equal(body.userPublicKey, WALLET);
       assert.equal(body.quoteResponse.outAmount, '167817933');
       assert.equal(body.wrapAndUnwrapSol, true);
-      return swapStatus === 200 ? Response.json({ swapTransaction: 'AQAA' }) : new Response('bad', { status: swapStatus });
+      return swapStatus === 200 ? Response.json({ swapTransaction }) : new Response('bad', { status: swapStatus });
     }
     if (target.host === 'solana-rpc.publicnode.com') {
       const body = JSON.parse(init.body);
       assert.equal(body.method, 'simulateTransaction');
-      assert.equal(body.params[0], 'AQAA');
+      assert.equal(body.params[0], swapTransaction);
       assert.deepEqual(body.params[1], { encoding: 'base64', sigVerify: false, replaceRecentBlockhash: true, commitment: 'processed' });
       return Response.json({ jsonrpc: '2.0', id: 1, result: { context: { slot: 1 }, value: simulateValue } });
     }
@@ -76,6 +76,11 @@ test('the Kamino withdrawal simulation posts to the same-origin function and map
   assert.equal(result.ok, true);
   assert.equal(result.unitsConsumed, 112573);
   assert.deepEqual(result.instructions, ['RefreshReserve[r]', 'withdrawV2']);
+  assert.equal(result.inspectorUrl, null, 'no transaction in the answer, no link');
+  const tx = Buffer.concat([Buffer.from([1]), Buffer.alloc(64), Buffer.from([0x80, 7])]).toString('base64');
+  const withTx = await simulateKaminoWithdraw({ address: WALLET, amountUsdc: 25, fetchImpl: async () => Response.json({ ok: true, error: null, unitsConsumed: 1, logCount: 1, instructions: ['withdrawV2'], amountUsdc: 25, transactionBase64: tx }) });
+  assert.equal(withTx.transactionBase64, tx);
+  assert.equal(withTx.inspectorUrl, inspectorUrl(tx));
   await assert.rejects(simulateKaminoWithdraw({ address: WALLET, amountUsdc: 25, fetchImpl: async () => Response.json({ error: 'No Kamino obligation' }, { status: 404 }) }), e => e instanceof AdapterError && /obligation/.test(e.message));
   await assert.rejects(simulateKaminoWithdraw({ address: 'bad', amountUsdc: 25, fetchImpl: () => assert.fail('must not fetch') }), e => e.code === 'INVALID_ADDRESS');
   await assert.rejects(simulateKaminoWithdraw({ address: WALLET, amountUsdc: 0, fetchImpl: () => assert.fail('must not fetch') }), e => e.code === 'INVALID_AMOUNT');
@@ -141,4 +146,25 @@ test('the preview builds the unsigned reduce-only IOC order the user would sign,
   assert.equal(noIndex.order, null);
   const cheap = await previewReduceShort({ quantity: 20, assetIndex: 5, szDecimals: 2, fetchImpl: async () => Response.json({ ...book, levels: [[{ px: '0.012345', sz: '1000' }], [{ px: '0.012346', sz: '1000' }]] }) });
   assert.equal(cheap.order.p, '0.0125', 'four decimals at most for a perp with szDecimals 2, rounded up');
+});
+
+const fakeTx = (signatures, message) => Buffer.concat([Buffer.from([signatures]), Buffer.alloc(64 * signatures), Buffer.from(message)]).toString('base64');
+
+test('the explorer inspector link carries the message bytes (transaction minus its signature slots), and is omitted for malformed input', () => {
+  const message = [0x80, 1, 2, 3, 4];
+  assert.equal(messageFromTransaction(fakeTx(1, message)), Buffer.from(message).toString('base64'));
+  assert.equal(messageFromTransaction(fakeTx(2, message)), Buffer.from(message).toString('base64'));
+  assert.equal(inspectorUrl(fakeTx(1, message)), `https://explorer.solana.com/tx/inspector?message=${encodeURIComponent(Buffer.from(message).toString('base64'))}`);
+  for (const bad of ['AQAA', '', Buffer.from([0, 1, 2]).toString('base64'), Buffer.from([1, ...new Array(64).fill(0)]).toString('base64')]) {
+    assert.equal(messageFromTransaction(bad), null, JSON.stringify(bad));
+    assert.equal(inspectorUrl(bad), null);
+  }
+});
+
+test('the sell simulation hands back the unsigned transaction and its inspector link', async () => {
+  const tx = fakeTx(1, [0x80, 9, 9]);
+  const { fetchImpl } = sequence({ swapTransaction: tx });
+  const result = await simulateSellSol({ address: WALLET, solAmount: 1.5, fetchImpl, now: () => 1_791_731_274_640 });
+  assert.equal(result.transactionBase64, tx);
+  assert.equal(result.inspectorUrl, inspectorUrl(tx));
 });

@@ -6,6 +6,25 @@ export { AdapterError };
 export const JUPITER_SWAP_URL = 'https://lite-api.jup.ag/swap/v1/swap';
 export const HL_INFO_URL = 'https://api.hyperliquid.xyz/info';
 
+const bytesFromBase64 = (text) => { try { const bin = atob(text); const out = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i); return out; } catch { return null; } };
+const base64FromBytes = (bytes) => { let bin = ''; for (const byte of bytes) bin += String.fromCharCode(byte); return btoa(bin); };
+/** The message bytes of a serialized transaction: a compact-u16 signature count, that many 64-byte signature slots, then the message. Null when the bytes do not fit that layout. */
+export function messageFromTransaction(transactionBase64) {
+  if (typeof transactionBase64 !== 'string' || !transactionBase64) return null;
+  const bytes = bytesFromBase64(transactionBase64);
+  if (!bytes || bytes.length < 2) return null;
+  const count = bytes[0]; // a single compact-u16 byte below 128 covers every real transaction
+  if (count === 0 || count >= 128) return null;
+  const start = 1 + 64 * count;
+  if (bytes.length <= start) return null;
+  return base64FromBytes(bytes.subarray(start));
+}
+/** Solana Explorer's transaction inspector decodes an unsigned message, so a judge can read every instruction of what would be signed. */
+export const inspectorUrl = (transactionBase64) => {
+  const message = messageFromTransaction(transactionBase64);
+  return message ? `https://explorer.solana.com/tx/inspector?message=${encodeURIComponent(message)}` : null;
+};
+
 /** Read-only preview of buying back SOL to reduce the short: walks the live asks of the public order book. Never places an order. */
 /** Hyperliquid price rule for perps: at most 5 significant figures and at most (6 − szDecimals) decimals; rounded up for a buy so an IOC can fill. */
 export function tickRoundUp(px, szDecimals) {
@@ -72,6 +91,8 @@ export async function simulateSellSol({ address, solAmount, fetchImpl = globalTh
     lamports,
     observedAt: new Date(now()).toISOString(),
     calls: ['quote', 'swap', 'simulateTransaction'],
+    transactionBase64: swap.swapTransaction,
+    inspectorUrl: inspectorUrl(swap.swapTransaction),
   };
 }
 
@@ -102,5 +123,7 @@ export async function simulateKaminoWithdraw({ address, amountUsdc, fetchImpl = 
     amountUsdc: data.amountUsdc,
     deliveredUsdc: typeof data.deliveredUsdc === 'number' ? data.deliveredUsdc : null,
     observedAt: data.observedAt ?? null,
+    transactionBase64: typeof data.transactionBase64 === 'string' ? data.transactionBase64 : null,
+    inspectorUrl: typeof data.transactionBase64 === 'string' ? inspectorUrl(data.transactionBase64) : null,
   };
 }

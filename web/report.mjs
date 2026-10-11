@@ -99,7 +99,7 @@ export function preflightChecks({ imported, portfolio, constraints }) {
   const buffer = initialHlBuffer(portfolio);
   const reserveLabel = `${(portfolio.hyperliquid.conservativeMarginRate * 100).toFixed(portfolio.hyperliquid.conservativeMarginRate * 100 % 1 ? 2 : 0)}% reserve`;
   if (buffer < constraints.minHlBuffer) push('warn', 'HL margin buffer', `model buffer ${money(buffer, true)} (${reserveLabel}) is under your ${money(constraints.minHlBuffer)} floor: HL withdrawals only after reducing the short; non-HL routes are evaluated separately`);
-  else push('ok', 'HL margin buffer', `model buffer ${money(buffer, true)} (${reserveLabel}) above your ${money(constraints.minHlBuffer)} floor; exchange reported ${money(hl.reported.withdrawable, true)} withdrawable`);
+  else push('ok', 'HL margin buffer', `model buffer ${money(buffer, true)} (${reserveLabel}) above your ${money(constraints.minHlBuffer)} floor; exchange reported ${money(hl.reported.withdrawable, true)} withdrawable (Δ ${money(Math.abs(buffer - hl.reported.withdrawable), true)})`);
   const liquidity = so.reported.reserveLiquidity, deposit = portfolio.solana.lending.usdc;
   if (deposit <= 0) push('info', 'Kamino liquidity', 'no Kamino deposit to withdraw');
   else if (liquidity >= deposit) push('ok', 'Kamino liquidity', `${money(liquidity, true)} pool cash in the USDC reserve (before withdrawal caps) vs your ${money(deposit, true)} deposited`);

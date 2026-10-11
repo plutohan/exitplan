@@ -1,6 +1,6 @@
 # Verification — 2026-10-11
 
-`node --test tests/*.test.mjs`: 232 tests passed, 0 failed.
+`node --test tests/*.test.mjs`: 234 tests passed, 0 failed.
 
 - 27 engine tests (deterministic planner, imported evidence, zero-short account, reserve helper) and 1 conservation grid over 650 feasible scenario plans
 - Hyperliquid, Solana and rehearsal adapter tests on captured real API responses in `tests/fixtures/`, plus server-side Kamino simulation tests with an injected fake SDK that pins the exact build and simulate calls
@@ -15,7 +15,7 @@ Not performed: a production security audit, simulation of the Hyperliquid legs, 
 
 ## Additions on 2026-10-12 (UTC+4, overnight improvement loop)
 
-`node --test tests/*.test.mjs`: 232 tests passed, 0 failed, including the terminal command (`tests/cli.test.mjs`), the shared report module (`tests/report.test.mjs`), a lot-size and minimum-order property grid, and the public-API stub in `tests/helpers/public-stub.mjs` that fails on any host or endpoint the adapters are not allowed to call.
+`node --test tests/*.test.mjs`: 234 tests passed, 0 failed, including the terminal command (`tests/cli.test.mjs`), the shared report module (`tests/report.test.mjs`), a lot-size and minimum-order property grid, and the public-API stub in `tests/helpers/public-stub.mjs` that fails on any host or endpoint the adapters are not allowed to call.
 
 Live, read-only, in headless Google Chrome against production after each deploy: the standard public account's model free collateral equalled Hyperliquid's reported withdrawable within a cent ($5,444.93 vs $5,444.94) and the unified public account's to the cent ($15,436.60); the pre-flight readout rendered ten checks; the reduce-short rehearsal step walked the live SOL book ("buying back 1.48 SOL walks 1 level to an average $111.28 … taker fee $0.06 at 3.825 bps … book age 1s") and showed the unsigned reduce-only IOC order; the Kamino and Jupiter simulations still succeeded; the pre-flight report copied at 1280 px and 390 px with no horizontal overflow; `node bin/exitplan.mjs` produced the same 31-line report from both public accounts. Only the public `info` endpoint of Hyperliquid was ever called (request log checked in Chrome).
 

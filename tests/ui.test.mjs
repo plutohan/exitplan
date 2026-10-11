@@ -24,6 +24,7 @@ const hlFunding = await loadFixture('hl-funding-history');
 const hlFees = await loadFixture('hl-user-fees');
 const hlBook = await loadFixture('hl-l2book');
 const hlMeta = await loadFixture('hl-meta');
+const FAKE_TX = Buffer.concat([Buffer.from([1]), Buffer.alloc(64), Buffer.from([0x80, 1, 2, 3])]).toString('base64');
 const kaminoFixture = await loadFixture('kamino-obligations');
 const jupiterFixture = await loadFixture('jupiter-quote');
 const WALLET = 'DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK';
@@ -584,7 +585,7 @@ test('imported rehearsal simulates the sell leg read-only and other steps are la
   const base = external();
   const ui = await mount(t, { externalResponse: async call => {
     const target = new URL(call.url);
-    if (target.pathname === '/swap/v1/swap') return json({ swapTransaction: 'AQAA' });
+    if (target.pathname === '/swap/v1/swap') return json({ swapTransaction: FAKE_TX });
     if (target.host === 'solana-rpc.publicnode.com' && JSON.parse(call.body).method === 'simulateTransaction') return json({ jsonrpc: '2.0', id: 1, result: { context: { slot: 1 }, value: { err: null, logs: ['x', 'y'], unitsConsumed: 4242 } } });
     return base(call);
   } });
@@ -618,6 +619,10 @@ test('imported rehearsal simulates the sell leg read-only and other steps are la
   assert.match(ui.get('#simulation-result').textContent, /Simulation succeeded/);
   assert.match(ui.get('#simulation-result').textContent, /4,242/);
   assert.match(ui.get('#simulation-result').textContent, /plan estimate \$/);
+  assert.match(ui.get('#inspector-link').getAttribute('href'), /^https:\/\/explorer\.solana\.com\/tx\/inspector\?message=/);
+  assert.equal(ui.get('#inspector-link').getAttribute('target'), '_blank');
+  await ui.click('#copy-tx');
+  assert.match(ui.get('#toast').textContent, /Unsigned transaction/);
   const rpcMethods = ui.calls.filter(call => call.host === 'solana-rpc.publicnode.com').map(call => JSON.parse(call.body).method);
   assert.ok(rpcMethods.includes('simulateTransaction'));
   assert.ok(!rpcMethods.includes('sendTransaction'));
@@ -749,7 +754,7 @@ test('imported copy never claims a 1:1 ratio, a synthetic walkthrough or an offs
   assert.match(ui.get('#import-status').textContent, /net exposure/);
   await ui.click('#open-evidence');
   const body = ui.get('#dialog-body').textContent;
-  assert.doesNotMatch(body, /1:1/);
+  assert.doesNotMatch(body, /\b1:1\b/) // word-bounded: a timestamp like 21:10 must not trip it;
   assert.doesNotMatch(body, /walkthrough only/);
   assert.match(body, /Starting net exposure/);
 });
@@ -899,7 +904,7 @@ test('the page ships an inline icon so browsers do not request a missing favicon
 });
 
 test('imported rehearsal simulates the Kamino withdrawal through the server function', async t => {
-  const ui = await mount(t, { externalResponse: external(), kaminoResponse: call => { const body = JSON.parse(call.body); assert.equal(body.wallet, WALLET); assert.ok(body.amountUsdc > 0); return json({ ok: true, error: null, unitsConsumed: 112573, logCount: 38, instructions: ['RefreshReserve[r]', 'RefreshObligation[o]', 'withdrawV2'], amountUsdc: body.amountUsdc, deliveredUsdc: body.amountUsdc }); } });
+  const ui = await mount(t, { externalResponse: external(), kaminoResponse: call => { const body = JSON.parse(call.body); assert.equal(body.wallet, WALLET); assert.ok(body.amountUsdc > 0); return json({ ok: true, error: null, unitsConsumed: 112573, logCount: 38, instructions: ['RefreshReserve[r]', 'RefreshObligation[o]', 'withdrawV2'], amountUsdc: body.amountUsdc, deliveredUsdc: body.amountUsdc, transactionBase64: FAKE_TX }); } });
   await importPositions(ui);
   await ui.input('#target', 2000); // wallet USDC + Kamino withdrawal
   assert.equal(ui.get('.plan-card.selected').dataset.plan.includes('lending') || ui.get('.plan-card.selected').dataset.plan === 'withdraw-lending', true);
@@ -914,6 +919,7 @@ test('imported rehearsal simulates the Kamino withdrawal through the server func
   assert.match(ui.get('#simulation-result').textContent, /112,573/);
   assert.match(ui.get('#simulation-result').textContent, /withdrawV2/);
   assert.match(ui.get('#simulation-result').textContent, /would deliver \$1,663\.60 \(plan \$1,663\.60\)/);
+  assert.match(ui.get('#inspector-link').getAttribute('href'), /explorer\.solana\.com\/tx\/inspector\?message=/);
   assert.doesNotMatch(ui.get('#dialog-body').textContent, /withdrawal transaction is not built/);
   assertNoExecutionCalls(ui);
 });
