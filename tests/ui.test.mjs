@@ -26,7 +26,7 @@ const EXTERNAL_HOSTS = ['api.hyperliquid.xyz', 'solana-rpc.publicnode.com', 'api
 const external = ({ hl = hlShort, kamino = kaminoFixture, jupiter = jupiterFixture, lamports = 3_219_600_000, fail = null, mode = 'disabled' } = {}) => async call => {
   const target = new URL(call.url);
   if (fail && target.host === fail) return new Response('down', { status: 500 });
-  if (target.host === 'api.hyperliquid.xyz') { const type = JSON.parse(call.body).type; return json(type === 'allMids' ? { SOL: '109.695' } : type === 'userAbstraction' ? mode : hl); }
+  if (target.host === 'api.hyperliquid.xyz') { const type = JSON.parse(call.body).type; return json(type === 'allMids' ? { SOL: '109.695' } : type === 'userAbstraction' ? mode : type === 'vaultDetails' ? null : hl); }
   if (target.host === 'solana-rpc.publicnode.com') return json({ jsonrpc: '2.0', id: 1, result: { context: { slot: 1 }, value: lamports } });
   if (target.host === 'api.kamino.finance' && target.pathname.endsWith('/reserves/metrics')) return json([{ reserve: 'D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59', totalSupply: '120702201.4', totalBorrow: '112626977.24' }]);
   if (target.host === 'api.kamino.finance') return json(kamino);
@@ -516,7 +516,7 @@ test('import by address loads both venues, labels plans IMPORTED and uses the qu
   assert.match(ui.get('.demo-label').textContent, /Imported/);
   assert.match(ui.get('.demo-label').textContent, /No real transactions/);
   assert.equal(ui.get('#load-positions').disabled, false);
-  assert.equal(ui.calls.filter(call => EXTERNAL_HOSTS.includes(call.host)).length, 8); // balance, Kamino obligations, Kamino reserve metrics, quote, wallet balances, clearinghouse, mids, account mode
+  assert.equal(ui.calls.filter(call => EXTERNAL_HOSTS.includes(call.host)).length, 9); // balance, Kamino obligations, Kamino reserve metrics, quote, wallet balances, clearinghouse, mids, account mode, vault check
   assert.match(ui.get('#import-status').textContent, /\$336\.40 in wallet/);
   assertNoExecutionCalls(ui);
 });

@@ -13,7 +13,7 @@ You give ExitPlan a **cash goal plus the limits you refuse to break** (new-debt 
 - **Real positions by address, Phantom connect, or a deep link.** Enter a Solana wallet and a Hyperliquid address, press *Connect Phantom (read-only)* (it reads the Solana address and the Phantom Perps 0x address, never signs), open a `#sol=…&hl=…&target=…` link, or press *Load public example*. The browser reads them read-only from public APIs: SOL balance (publicnode RPC), Kamino main-market USDC deposits and borrows (Kamino API), the SOL short, equity, withdrawable and other positions on Hyperliquid (public info API), the HyperCore account mode (`userAbstraction`), USDC already sitting in the wallet (Jupiter balances, used first at zero fee), and a live Jupiter quote for SOL → USDC.
 - **Real transaction simulation, two legs.** In the rehearsal, the Solana sell leg builds an unsigned Jupiter swap for the entered wallet and runs Solana `simulateTransaction` (signature verification off, fresh blockhash). The Kamino withdrawal leg builds the real unsigned withdraw transaction with Kamino's SDK in a server function (create ATA if needed, refresh reserve, refresh obligation, withdraw and redeem), simulates it the same way, and reads the wallet's USDC token account from the simulation to report **what would actually arrive** against the plan. You see success or the exact program error, compute units and the instruction list. Nothing is ever sent.
 - **Margin math that matches the exchange.** For a live four-position account the model's withdrawable equals Hyperliquid's reported withdrawable to the cent, and the mark comes from the position's own value; the liquidation estimate is anchored on the exchange's number.
-- **Deterministic route engine** that enumerates withdrawals, sales, paired unwinds, short-only reductions with released margin, and borrowing comparisons, with integer-cent arithmetic, fail-closed validation and 192 automated tests, including a 650-plan conservation grid.
+- **Deterministic route engine** that enumerates withdrawals, sales, paired unwinds, short-only reductions with released margin, and borrowing comparisons, with integer-cent arithmetic, fail-closed validation and 193 automated tests, including a 650-plan conservation grid.
 - **AI intent with confirmation.** Describe the goal in your own words; a server function turns it into a constraint proposal (OpenAI structured output, validated against a schema), and nothing applies until you confirm.
 - **Liquidation price before and after.** The exchange's own liquidation price is shown at load, and after a route an estimate anchored on that price (maintenance margin = 1 / (2 × max leverage)) shows where it would move. It is labelled an estimate.
 - **Kamino withdraw capacity capped by reserve liquidity** read from Kamino's reserve metrics at load.
@@ -24,7 +24,7 @@ You give ExitPlan a **cash goal plus the limits you refuse to break** (new-debt 
 - No execution. No wallet connection, signing, sending, bridging, borrowing or trading.
 - Hyperliquid order and withdrawal steps are listed but not simulated (they need signed exchange requests).
 - Fees other than the Jupiter-quoted sale, the 10% margin reserve, durations and borrowing terms are model assumptions and are labelled as such in the app.
-- **Standard Hyperliquid accounts today.** The account mode is verified on HyperCore: `disabled` or `default` import; Unified and portfolio-margin accounts keep USDC in the spot balance, which this version does not read, so they are rejected with that explanation. Unified support is the first item on the roadmap. Margin used by other open positions is treated as locked.
+- **Standard Hyperliquid accounts today.** The account mode is verified on HyperCore: `disabled` or `default` import; Unified and portfolio-margin accounts keep USDC in the spot balance, which this version does not read, so they are rejected with that explanation. Unified support is the first item on the roadmap. Vault addresses (for example HLP) are rejected as not being user accounts. Margin used by other open positions is treated as locked.
 - Only Kamino obligations that hold USDC alone are supported; mixed-asset obligations and any existing borrow are rejected with a reason.
 - The 10% margin reserve mirrors Hyperliquid's 10%-of-notional withdrawal floor, not its maintenance margin. The after-route liquidation price is a model estimate for the SOL position alone, anchored on the exchange's number, with other positions held constant.
 - Carry is not modelled: closing part of the short gives up funding and withdrawing from Kamino gives up supply yield; routes are ranked by upfront model fees only.
@@ -43,7 +43,7 @@ Requires Node.js 20+. The browser app has no dependencies; the Kamino simulation
 
 ```sh
 npm ci --ignore-scripts
-npm test                       # 192 tests: engine, adapters, server, UI
+npm test                       # 193 tests: engine, adapters, server, UI
 npx vercel dev                 # serves web/ and the api/ functions
 ```
 

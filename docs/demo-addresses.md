@@ -27,3 +27,21 @@ The best demo is your own small 1:1 hedge (SOL in Phantom, an equal SOL short in
 Check: `curl -s "https://api.kamino.finance/kamino-market/7u3HeHxYDLhnCoErrtycNokbQYbWGzLs6JSDqGAv5PfF/users/<wallet>/obligations"`
 
 Reserve addresses in the main market: USDC `D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59`, SOL `d4A2prbA2whesmvHaL88BH6Ewn5N4bTSU2Ze8P6Bc4Q`.
+
+## Test matrix (public wallets, checked live on 2026-10-12 00:55 UTC+4)
+
+Paste any of these, or open the deep links on the live site. None of them is ours; positions change.
+
+| Solana wallet | Hyperliquid address | What the app shows | Deep link |
+| --- | --- | --- | --- |
+| `DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK` | `0x4bdf1130109e9c1bc921d8979ea66284d9c92f37` | Imports: 3.22 SOL, $336 wallet USDC, $9.6k Kamino, 91.32 SOL short (standard, verified), liquidation card, routes incl. wallet-USDC-first and paired trim; both Solana simulations work | [open](https://exitplan-rouge.vercel.app/#sol=DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK&hl=0x4bdf1130109e9c1bc921d8979ea66284d9c92f37&target=500) |
+| `2g2xzcMiTGysNZzv9zZcDqx7MtdRxWG1VHMVPDw3qdW9` | `0x4bdf1130109e9c1bc921d8979ea66284d9c92f37` | Imports: 0.5 SOL, no wallet USDC, $26.6k Kamino; Kamino withdrawal is the best route | [open](https://exitplan-rouge.vercel.app/#sol=2g2xzcMiTGysNZzv9zZcDqx7MtdRxWG1VHMVPDw3qdW9&hl=0x4bdf1130109e9c1bc921d8979ea66284d9c92f37&target=2000) |
+| `GpSfiLicGjMHt7bsjn4qszXm37taAbUjxHfvd7wUpJim` | `0x4bdf1130109e9c1bc921d8979ea66284d9c92f37` | Imports: 0.18 SOL, $7.0k Kamino | [open](https://exitplan-rouge.vercel.app/#sol=GpSfiLicGjMHt7bsjn4qszXm37taAbUjxHfvd7wUpJim&hl=0x4bdf1130109e9c1bc921d8979ea66284d9c92f37&target=1000) |
+| `73vjancZxVR6QNWujzJCUzjeHZJSCBgvZe6CpMUWZALD` | `0x4bdf1130109e9c1bc921d8979ea66284d9c92f37` | Imports: $583k Kamino USDC; large targets show the Kamino liquidity cap in the evidence dialog | [open](https://exitplan-rouge.vercel.app/#sol=73vjancZxVR6QNWujzJCUzjeHZJSCBgvZe6CpMUWZALD&hl=0x4bdf1130109e9c1bc921d8979ea66284d9c92f37&target=10000) |
+| `DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK` | `0x3de9a354243a94e10060a198c7179b8e5393b9a1` | Rejected: portfolio-margin account ("keeps USDC in the spot balance … Standard accounts today"); scenario stays | [open](https://exitplan-rouge.vercel.app/#sol=DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK&hl=0x3de9a354243a94e10060a198c7179b8e5393b9a1&target=500) |
+| `DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK` | `0x3dd462347e7b42b5a3ea15132b677a4978af7a81` | Rejected: unified account, same explanation | [open](https://exitplan-rouge.vercel.app/#sol=DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK&hl=0x3dd462347e7b42b5a3ea15132b677a4978af7a81&target=500) |
+| `DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK` | `0xdfc24b077bc1425ad1dea75bcb6f8158e10df303` | Rejected: this is the HLP vault, not a user account | [open](https://exitplan-rouge.vercel.app/#sol=DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK&hl=0xdfc24b077bc1425ad1dea75bcb6f8158e10df303&target=500) |
+| `5x2mUw5U9tKGaeJK1t5wjxhBPSXEmDTKZ2DGs3o27is3` | `0x4bdf1130109e9c1bc921d8979ea66284d9c92f37` | Rejected: Kamino obligation holds SOL as well as USDC (mixed collateral is not modelled) | [open](https://exitplan-rouge.vercel.app/#sol=5x2mUw5U9tKGaeJK1t5wjxhBPSXEmDTKZ2DGs3o27is3&hl=0x4bdf1130109e9c1bc921d8979ea66284d9c92f37&target=500) |
+| `Vote111111111111111111111111111111111111111` | `0x0000000000000000000000000000000000000000` | Imports as empty (0 SOL, no Kamino, no short) with the margin-floor note; only the wallet route exists | [open](https://exitplan-rouge.vercel.app/#sol=Vote111111111111111111111111111111111111111&hl=0x0000000000000000000000000000000000000000&target=500) |
+
+Malformed input (wrong length, a Solana address in the Hyperliquid field, or vice versa) is rejected before any network call.

@@ -12,6 +12,7 @@ const fetchFor = (state, options = {}) => async (url, init) => {
   const body = JSON.parse(init.body);
   if (body.type === 'allMids') return Response.json(options.mids ?? mids);
   if (body.type === 'userAbstraction') { assert.equal(body.user, ADDR); return Response.json(options.mode ?? 'disabled'); }
+  if (body.type === 'vaultDetails') { assert.equal(body.vaultAddress, ADDR); return Response.json(options.vault ?? null); }
   if (body.type === 'clearinghouseState') { assert.equal(body.user, ADDR); return Response.json(state); }
   assert.fail('unexpected request ' + init.body);
 };
@@ -135,4 +136,11 @@ test('unified and portfolio-margin rejections explain where the USDC sits and wh
   for (const mode of ['unifiedAccount', 'portfolioMargin']) {
     await assert.rejects(importHyperliquid(ADDR, { fetchImpl: fetchFor(state, { mode }) }), e => e.code === 'UNSUPPORTED_ACCOUNT_MODE' && /spot balance/.test(e.message) && /Standard accounts today/.test(e.message));
   }
+});
+
+test('a Hyperliquid vault address is rejected as not a user account', async () => {
+  const state = await fixture('hl-sol-short');
+  await assert.rejects(importHyperliquid(ADDR, { fetchImpl: fetchFor(state, { mode: 'default', vault: { name: 'Hyperliquidity Provider (HLP)', vaultAddress: ADDR, leader: '0x' + '1'.repeat(40) } }) }), e => e instanceof AdapterError && e.code === 'VAULT_ADDRESS' && /vault/.test(e.message));
+  const ok = await importHyperliquid(ADDR, { fetchImpl: fetchFor(state, { vault: null }) });
+  assert.equal(ok.state.shortSol > 0, true);
 });

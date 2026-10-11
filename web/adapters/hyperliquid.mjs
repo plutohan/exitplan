@@ -10,11 +10,15 @@ const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 export async function importHyperliquid(address, { fetchImpl = globalThis.fetch, now = Date.now, timeoutMs = 8000 } = {}) {
   if (typeof address !== 'string' || !ADDRESS.test(address)) throw new AdapterError('INVALID_ADDRESS', 'Enter a Hyperliquid address: 0x followed by 40 hex characters');
   const options = { method: 'POST', fetchImpl, timeoutMs };
-  const [state, mids, abstraction] = await Promise.all([
+  const [state, mids, abstraction, vault] = await Promise.all([
     requestJson(HL_INFO_URL, { ...options, body: { type: 'clearinghouseState', user: address } }),
     requestJson(HL_INFO_URL, { ...options, body: { type: 'allMids' } }),
     requestJson(HL_INFO_URL, { ...options, body: { type: 'userAbstraction', user: address } }),
+    requestJson(HL_INFO_URL, { ...options, body: { type: 'vaultDetails', vaultAddress: address } }),
   ]);
+  if (vault && typeof vault === 'object') {
+    throw new AdapterError('VAULT_ADDRESS', `This address is a Hyperliquid vault (${String(vault.name ?? 'unnamed')}), not a user account; enter the address that holds your positions`);
+  }
   const accountMode = typeof abstraction === 'string' ? abstraction : null;
   if (accountMode !== 'disabled' && accountMode !== 'default') {
     const where = accountMode === 'unifiedAccount' || accountMode === 'portfolioMargin' ? 'unified and portfolio-margin accounts keep USDC in the spot balance, which this planner does not read' : 'this abstraction mode is not modelled';
