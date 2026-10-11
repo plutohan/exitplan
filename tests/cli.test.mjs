@@ -1,0 +1,54 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { run, parseArgs, USAGE } from '../bin/exitplan.mjs';
+import { publicStub, WALLET, HL } from './helpers/public-stub.mjs';
+
+const capture = () => { const chunks = []; return { write: text => chunks.push(text), text: () => chunks.join('') }; };
+
+test('the terminal command prints the same pre-flight report from the same adapters and engine, read-only', async () => {
+  const { fetchImpl, calls } = await publicStub();
+  const out = capture();
+  const code = await run(['--sol', WALLET, '--hl', HL, '--target', '500'], { fetchImpl, write: out.write, now: () => new Date('2026-10-12T00:00:00Z') });
+  assert.equal(code, 0);
+  const text = out.text();
+  assert.match(text, /^# ExitPlan pre-flight report · 2026-10-12 00:00 UTC/);
+  assert.match(text, /Account mode: ok/);
+  assert.match(text, /## Routes \(ranked by upfront fees\)/);
+  assert.match(text, /1\. \[selected\] .* — net \$5\d\d\.\d\d/);
+  assert.match(text, /carry given up/);
+  assert.match(text, /Plan link: https:\/\/exitplan-rouge\.vercel\.app\/#sol=DrED/);
+  assert.match(text, /target=500/);
+  assert.ok(calls.every(call => call.host !== 'api.hyperliquid.xyz' || call.path === '/info'), 'only the read-only info endpoint');
+  assert.ok(!calls.some(call => call.type === 'sendTransaction'));
+});
+
+test('--json returns the engine result with the read-only flags, and constraint flags map onto the engine', async () => {
+  const { fetchImpl } = await publicStub();
+  const out = capture();
+  const code = await run(['--sol', WALLET, '--hl', HL, '--target', '500', '--keep-sol', '--no-hedge', '--min-buffer', '100', '--json'], { fetchImpl, write: out.write });
+  assert.equal(code, 0);
+  const payload = JSON.parse(out.text());
+  assert.equal(payload.readOnly, true);
+  assert.equal(payload.executionSupported, false);
+  assert.deepEqual([payload.constraints.preserveSolQuantity, payload.constraints.preserveHedge, payload.constraints.minHlBuffer], [true, false, 100]);
+  assert.ok(Array.isArray(payload.result.feasible));
+  assert.equal(payload.portfolio.evidence, 'imported');
+  assert.equal(payload.portfolio.hyperliquid.lotSize, 0.01);
+});
+
+test('bad input exits with usage, and an adapter failure exits non-zero with the reason', async () => {
+  const out = capture();
+  assert.equal(await run(['--sol', 'nope', '--hl', HL], { write: out.write }), 2);
+  assert.match(out.text(), /Invalid or missing Solana wallet address/);
+  const out2 = capture();
+  assert.equal(await run(['--sol', WALLET, '--hl', HL, '--target', 'abc'], { write: out2.write }), 2);
+  assert.match(out2.text(), /--target needs a number/);
+  const out3 = capture();
+  assert.equal(await run(['--help'], { write: out3.write }), 0);
+  assert.equal(out3.text(), USAGE);
+  const failing = async () => new Response('down', { status: 503 });
+  const out4 = capture();
+  assert.equal(await run(['--sol', WALLET, '--hl', HL], { fetchImpl: failing, write: out4.write }), 1);
+  assert.match(out4.text(), /Could not load positions/);
+  assert.deepEqual(parseArgs(['--sol', WALLET, '--hl', HL]).target, 2000);
+});

@@ -2,6 +2,7 @@ import { createDemoPortfolio, defaultConstraints, planExit, requiredMarginCents 
 import { importHyperliquid, estimateLiquidationAfter } from './adapters/hyperliquid.mjs';
 import { importSolana, isSolanaAddress } from './adapters/solana.mjs';
 import { simulateSellSol, simulateKaminoWithdraw, previewReduceShort } from './adapters/rehearsal.mjs';
+import { money, num, planName, stepName, carryText, buildImportedPortfolio, preflightChecks, buildReport as buildReportText, rejectionText as rejectionReasons, initialHlBuffer as hlBufferOf } from './report.mjs';
 
 const $ = (query, root = document) => root.querySelector(query);
 const $$ = (query, root = document) => [...root.querySelectorAll(query)];
@@ -18,13 +19,6 @@ let constraints = defaultConstraints(),
   proposal = null,
   requestSequence = 0,
   rehearsal = null;
-const fmt = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
-const money = (n, precise = false) =>
-  '$' +
-  new Intl.NumberFormat('en-US', { minimumFractionDigits: precise ? 2 : 0, maximumFractionDigits: 2 }).format(
-    Number(n) || 0,
-  );
-const num = (n) => fmt.format(Number(n) || 0);
 const esc = (value) =>
   String(value ?? '').replace(
     /[&<>"']/g,
@@ -67,41 +61,13 @@ function hydrateIcons(root = document) {
 }
 hydrateIcons();
 
-function planName(p) {
-  if (p.id === 'no-action') return 'Keep current positions';
-  if (p.family === 'wallet') return 'Use wallet USDC';
-  const actions = p.steps || [];
-  const walletPrefix = p.walletUsed > 0 ? 'Wallet USDC + ' : '';
-  const hasLend = actions.some((s) => s.action.startsWith('Withdraw lending'));
-  const hasHl = actions.some((s) => s.action.startsWith('Withdraw and transfer'));
-  if (p.newDebt > 0)
-    return walletPrefix + (hasLend || hasHl ? 'Withdraw deposits + borrow more' : 'Borrow against SOL');
-  if (p.shortReduced > 0 && p.solSold === 0)
-    return walletPrefix + (hasLend ? 'Reduce short + released margin + deposits' : 'Reduce short + released margin');
-  if (p.solSold > 0 && p.shortReduced > 0)
-    return (
-      walletPrefix + (hasLend || hasHl ? 'Withdraw deposits + trim spot and short' : 'Trim spot and short together')
-    );
-  if (p.solSold > 0) return walletPrefix + 'Sell SOL only';
-  if (hasLend && hasHl) return walletPrefix + 'Split withdrawal: Solana + HL';
-  if (hasLend) return walletPrefix + 'Withdraw Solana deposit USDC';
-  if (hasHl) return walletPrefix + 'Withdraw free HL collateral';
-  return walletPrefix + 'Cash route';
+const rejectionText = (p) => rejectionReasons(p, constraints, initialHlBuffer());
+const initialHlBuffer = () => hlBufferOf(portfolio);
+function preflightItems() {
+  return preflightChecks({ imported, portfolio, constraints });
 }
-function stepName(s) {
-  return s.action.startsWith('Use USDC')
-    ? 'Use wallet USDC'
-    : s.action.startsWith('Withdraw lending')
-      ? 'Withdraw deposited USDC'
-      : s.action.startsWith('Sell SOL')
-        ? 'Sell SOL spot'
-        : s.action === 'Reduce SOL short'
-          ? 'Reduce SOL short'
-          : s.action.startsWith('Reduce SOL')
-            ? 'Reduce SOL short by the same amount'
-          : s.action.startsWith('Borrow')
-            ? 'Borrow against SOL (comparison)'
-            : 'Withdraw HL collateral → Solana';
+function buildReport() {
+  return buildReportText({ imported, portfolio, result, constraints, selectedId, link: planLink() });
 }
 function stepVenue(s) {
   return s.venue.startsWith('Hyperliquid') ? 'Hyperliquid' : 'Solana';
@@ -111,18 +77,6 @@ function planDescription(p) {
     p.steps.map((s) => `${stepName(s)} ${s.unit === 'USDC' ? money(s.amount) : num(s.amount) + ' SOL'}`).join(' → ') ||
     'Nothing to move'
   );
-}
-function rejectionText(p) {
-  const reasons = [];
-  if (p.netCash < constraints.target) reasons.push(`${money(constraints.target - p.netCash)} short of the target`);
-  if (constraints.preserveSolQuantity && p.solSold > 0) reasons.push('Violates keep-SOL-quantity');
-  if (constraints.preserveHedge && Math.abs(p.solSold - p.shortReduced) > 0.0000005)
-    reasons.push('Spot and short mismatch changes net SOL exposure');
-  if (p.newDebt > constraints.maxNewDebt) reasons.push(`New debt ${money(p.newDebt)} exceeds the limit`);
-  if (p.hlBufferAfter < constraints.minHlBuffer && p.hlBufferAfter < initialHlBuffer())
-    reasons.push('Below the minimum margin buffer');
-  if (p.estimatedHours > constraints.deadlineHours) reasons.push('Assumed duration exceeds the planning window');
-  return reasons.join(' · ') || 'Exceeds a withdrawal or position limit';
 }
 function outcomeKey(p) {
   return [
@@ -263,14 +217,6 @@ function selectPlan(id) {
   renderDecision();
 }
 const ratio = (after, before) => (before > 0 ? after / before : 1);
-const initialHlBuffer = () =>
-  portfolio.hyperliquid.collateral -
-  requiredMarginCents(
-    portfolio.hyperliquid.shortSol,
-    portfolio.hyperliquid.markPrice,
-    portfolio.hyperliquid.conservativeMarginRate,
-  ) /
-    100;
 function renderPositions() {
   const initialExposure = portfolio.solana.sol - portfolio.hyperliquid.shortSol;
   const p = result.plans.find((p) => p.id === selectedId && p.feasible);
@@ -852,42 +798,6 @@ function renderSource() {
   renderPreflight();
   $('#share-link').disabled = !imported;
 }
-const carryText = (p) => (p.carryPerYear == null ? ['Carry', 'unknown'] : p.carryPerYear < 0 ? ['Carry saved', `${money(-p.carryPerYear, true)}/yr`] : ['Carry given up', `${money(p.carryPerYear, true)}/yr`]);
-function preflightItems() {
-  const hl = imported.hyperliquid, so = imported.solana;
-  const items = [];
-  const push = (status, label, detail) => items.push({ status, label, detail });
-  if (hl.reported.accountMode === 'disabled') push('ok', 'Account mode', 'verified on HyperCore: standard (abstraction disabled)');
-  else if (hl.reported.accountMode === 'unifiedAccount' && hl.reported.crossCheck && !hl.reported.crossCheck.ok) push('warn', 'Account mode', `unified account verified, but the cross-check failed: spot USDC total minus maintenance ${money(hl.reported.crossCheck.implied, true)} vs exchange available ${money(hl.reported.crossCheck.available, true)}; positions on other perp DEXs (HIP-3) are not modelled`);
-  else if (hl.reported.accountMode === 'unifiedAccount') push('ok', 'Account mode', `verified on HyperCore: unified account (spot USDC ${money(hl.reported.spotUsdc.total, true)} is the equity, ${money(hl.reported.spotUsdc.hold, true)} held as margin)`);
-  else push('warn', 'Account mode', 'reported as default on HyperCore; treated as standard, not proven');
-  const exposure = portfolio.solana.sol - portfolio.hyperliquid.shortSol;
-  if (Math.abs(exposure) < 0.000001) push('ok', 'Net exposure', '0 SOL: spot and short balanced');
-  else push('warn', 'Net exposure', `${num(exposure)} SOL: not neutral (spot ${num(portfolio.solana.sol)}, short ${num(portfolio.hyperliquid.shortSol)}); keep-net-exposure preserves this${hl.reported.spotSol > 0 ? ` · HyperCore spot also holds ${hl.reported.spotSol} USOL, not counted` : ''}`);
-  if (portfolio.hyperliquid.shortSol > 0 && hl.reported.liquidationPrice) {
-    const distance = (hl.reported.liquidationPrice - portfolio.hyperliquid.markPrice) / portfolio.hyperliquid.markPrice;
-    if (distance <= 0) push('warn', 'Liquidation', `${money(hl.reported.liquidationPrice, true)} vs mark ${money(portfolio.hyperliquid.markPrice, true)}: at or past liquidation on the exchange's number; reload positions`);
-    else push(distance >= 0.25 ? 'ok' : 'warn', 'Liquidation', `${money(hl.reported.liquidationPrice, true)} vs mark ${money(portfolio.hyperliquid.markPrice, true)} (${(distance * 100).toFixed(0)}% above mark), cross-margin price from the exchange; assumes other positions' prices hold`);
-  } else push('info', 'Liquidation', 'no SOL short, no liquidation price');
-  const buffer = initialHlBuffer();
-  const reserveLabel = `${(portfolio.hyperliquid.conservativeMarginRate * 100).toFixed(portfolio.hyperliquid.conservativeMarginRate * 100 % 1 ? 2 : 0)}% reserve`;
-  if (buffer < constraints.minHlBuffer) push('warn', 'HL margin buffer', `model buffer ${money(buffer, true)} (${reserveLabel}) is under your ${money(constraints.minHlBuffer)} floor: HL withdrawals only after reducing the short; non-HL routes are evaluated separately`);
-  else push('ok', 'HL margin buffer', `model buffer ${money(buffer, true)} (${reserveLabel}) above your ${money(constraints.minHlBuffer)} floor; exchange reported ${money(hl.reported.withdrawable, true)} withdrawable`);
-  const liquidity = so.reported.reserveLiquidity, deposit = portfolio.solana.lending.usdc;
-  if (deposit <= 0) push('info', 'Kamino liquidity', 'no Kamino deposit to withdraw');
-  else if (liquidity >= deposit) push('ok', 'Kamino liquidity', `${money(liquidity, true)} pool cash in the USDC reserve (before withdrawal caps) vs your ${money(deposit, true)} deposited`);
-  else push('warn', 'Kamino liquidity', `only ${money(liquidity, true)} pool cash in the USDC reserve (before withdrawal caps) vs your ${money(deposit, true)} deposited`);
-  const walletUsdc = portfolio.solana.wallet.usdc;
-  push(walletUsdc > 0 ? 'ok' : 'info', 'Wallet USDC', walletUsdc > 0 ? `${money(walletUsdc, true)} used first at zero fee` : 'none in the wallet');
-  const fundingApr = portfolio.hyperliquid.fundingApr, supplyApy = portfolio.solana.lending.supplyApy;
-  const shortNotional = portfolio.hyperliquid.shortSol * portfolio.hyperliquid.markPrice;
-  const fundingPart = fundingApr == null ? 'SOL funding history unavailable' : portfolio.hyperliquid.shortSol > 0 ? `short ${fundingApr >= 0 ? 'earns' : 'pays'} ~${money(Math.abs(shortNotional * fundingApr), true)}/yr funding (7-day average ${(fundingApr * 100).toFixed(2)}%)` : `no short; SOL funding 7-day average ${(fundingApr * 100).toFixed(2)}%`;
-  const yieldPart = supplyApy == null ? 'Kamino supply APY unavailable' : deposit > 0 ? `deposit earns ~${money(deposit * supplyApy, true)}/yr (${(supplyApy * 100).toFixed(2)}% APY)` : `no deposit; Kamino USDC ${(supplyApy * 100).toFixed(2)}% APY`;
-  push('info', 'Carry', `${fundingPart} · ${yieldPart}; each route shows the carry it gives up`);
-  if (hl.reported.otherPositions.length) push('info', 'Other Hyperliquid positions', `${hl.reported.otherPositions.map((p) => p.coin).join(', ')}: margin treated as locked`);
-  push('info', 'Not simulated', 'Hyperliquid order and withdrawal legs; HL → Solana CCTP delivery fee');
-  return items;
-}
 function renderPreflight() {
   const panel = $('#preflight');
   if (portfolio.evidence !== 'imported' || !imported) {
@@ -922,18 +832,6 @@ function setSource(mode) {
   );
   $('#load-positions').disabled = false;
   renderSource();
-}
-function buildImportedPortfolio(solana, hyperliquid) {
-  const base = createDemoPortfolio();
-  return {
-    evidence: 'imported',
-    synthetic: false,
-    snapshot: { complete: true, ageSeconds: 0, maxAgeSeconds: 300 },
-    solana: solana.state,
-    hyperliquid: hyperliquid.state,
-    fees: { ...base.fees, lendingWithdraw: 0, solSaleBps: solana.quote.solSaleBps, hlCloseBps: hyperliquid.reported.fees?.closeBps ?? base.fees.hlCloseBps }, // Kamino charges no withdrawal fee; the short-reduction fee is the account's taker rate when known
-    timing: base.timing,
-  };
 }
 async function loadPositions() {
   const solanaAddress = $('#solana-address').value.trim(),
@@ -1053,33 +951,6 @@ function planLink() {
   const params = new URLSearchParams({ sol: imported.solana.address, hl: imported.hyperliquid.address });
   for (const key of ['target', 'maxNewDebt', 'minHlBuffer', 'deadlineHours', 'preserveHedge', 'preserveSolQuantity']) params.set(key, String(constraints[key]));
   return `${location.origin}/#${params.toString()}`;
-}
-function buildReport() {
-  const hl = imported.hyperliquid, so = imported.solana, h = portfolio.hyperliquid, s = portfolio.solana;
-  const yesNo = (v) => (v ? 'yes' : 'no');
-  const ranked = [...result.feasible], rejected = result.plans.filter((p) => !p.feasible);
-  const routeLine = (p, i) => `${i + 1}. ${p.id === selectedId ? '[selected] ' : ''}${planName(p)} — net ${money(p.netCash, true)} · upfront fees ${money(p.fees, true)} · ${carryText(p)[0].toLowerCase()} ${carryText(p)[1]} · new debt ${money(p.newDebt)} · steps: ${p.steps.map((st) => `${stepName(st)} ${st.unit === 'USDC' ? money(st.amount, true) : num(st.amount) + ' SOL'}`).join(' → ')}`;
-  return [
-    `# ExitPlan pre-flight report · ${new Date().toISOString().replace('T', ' ').slice(0, 16)} UTC`,
-    'Read-only. Nothing was signed or sent. Estimates at today\'s rates from public APIs; not an execution plan.',
-    '',
-    `Solana wallet ${imported.solana.address} · Hyperliquid address ${imported.hyperliquid.address}`,
-    `Solana: ${num(s.sol)} SOL · Kamino deposit ${money(s.lending.usdc, true)} · wallet USDC ${money(s.wallet.usdc, true)} · SOL quote ${money(s.solPrice, true)}`,
-    `Hyperliquid: ${h.accountMode} account · short ${num(h.shortSol)} SOL at mark ${money(h.markPrice, true)} · liquidation ${hl.reported.liquidationPrice ? money(hl.reported.liquidationPrice, true) : 'n/a'} · model buffer ${money(initialHlBuffer(), true)} (${(h.conservativeMarginRate * 100).toFixed(h.conservativeMarginRate * 100 % 1 ? 2 : 0)}% reserve) · exchange withdrawable ${money(hl.reported.withdrawable, true)}`,
-    `Goal: ${money(constraints.target)} net USDC · keep net exposure: ${yesNo(constraints.preserveHedge)} · keep SOL quantity: ${yesNo(constraints.preserveSolQuantity)} · new-debt cap ${money(constraints.maxNewDebt)} · min HL buffer ${money(constraints.minHlBuffer)} · deadline ${constraints.deadlineHours} h`,
-    '',
-    '## Checks',
-    ...preflightItems().map((i) => `- ${i.label}: ${i.status} · ${i.detail}`),
-    '',
-    `## Routes (ranked by upfront fees) · ${ranked.length} of ${result.plans.length} fit`,
-    ...(ranked.length ? ranked.map(routeLine) : ['- none fits the current goal and limits']),
-    '',
-    '## Rejected routes',
-    ...(rejected.length ? rejected.map((p) => `- ${planName(p)} — ${rejectionText(p)}`) : ['- none']),
-    '',
-    `Plan link: ${planLink()}`,
-    'Generated by ExitPlan (https://exitplan-rouge.vercel.app) · MIT · Not financial advice. Hyperliquid legs are not simulated; HL → Solana delivery fees are a model placeholder.',
-  ].join('\n');
 }
 $('#copy-report').addEventListener('click', async () => {
   if (!imported || portfolio.evidence !== 'imported') return;

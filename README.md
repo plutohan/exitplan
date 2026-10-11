@@ -14,7 +14,7 @@ You give ExitPlan a **cash goal plus the limits you refuse to break** (new-debt 
 - **Real transaction simulation, two legs.** In the rehearsal, the Solana sell leg builds an unsigned Jupiter swap for the entered wallet and runs Solana `simulateTransaction` (signature verification off, fresh blockhash). The Kamino withdrawal leg builds the real unsigned withdraw transaction with Kamino's SDK in a server function (create ATA if needed, refresh reserve, refresh obligation, withdraw and redeem), simulates it the same way, and reads the wallet's USDC token account from the simulation to report **what would actually arrive** against the plan. You see success or the exact program error, compute units and the instruction list. Nothing is ever sent.
 - **Fees from your account and a read-only fill preview on Hyperliquid.** The short-reduction fee is your own taker rate from the public `userFees` endpoint (rounded up to the basis point) instead of a fixture, and in the rehearsal the reduce-short step walks the live SOL order book to show the average buy-back price, slippage in basis points, levels used and the estimated fee. It also shows the exact unsigned reduce-only IOC order the user would sign (asset index, lot-sized size, tick-rounded limit with a 0.5% cap), the buy-back cost against the plan's mark and the book's age. No order is placed; the withdrawal step still needs a signed request and stays unsimulated.
 - **Margin math that matches the exchange.** For a live four-position account the model's withdrawable equals Hyperliquid's reported withdrawable to the cent, and the mark comes from the position's own value; the liquidation estimate is anchored on the exchange's number.
-- **Deterministic route engine** that enumerates withdrawals, sales, paired unwinds, short-only reductions with released margin, and borrowing comparisons, with integer-cent arithmetic, fail-closed validation and 223 automated tests, including a 650-plan conservation grid.
+- **Deterministic route engine** that enumerates withdrawals, sales, paired unwinds, short-only reductions with released margin, and borrowing comparisons, with integer-cent arithmetic, fail-closed validation and 228 automated tests, including a 650-plan conservation grid.
 - **AI intent with confirmation.** Describe the goal in your own words; a server function turns it into a constraint proposal (OpenAI structured output, validated against a schema), and nothing applies until you confirm.
 - **Pre-flight readout.** After an import, a checklist grades what matters before any unwind: account mode verified, net exposure (flagged when not neutral), liquidation distance, HL margin buffer against your floor, Kamino reserve liquidity against your deposit, wallet USDC, other positions, and what is not simulated.
 - **Carry given up per route.** Every route shows the yearly carry it gives up at today's rates: funding on the SOL short reduced (7-day average from Hyperliquid's funding history) plus supply yield on the Kamino deposit withdrawn (reserve supply APY). Routes are still ranked by upfront fees; the carry figure is there to change the decision, not the sort.
@@ -48,11 +48,22 @@ Requires Node.js 20+. The browser app has no dependencies; the Kamino simulation
 
 ```sh
 npm ci --ignore-scripts
-npm test                       # 223 tests: engine, adapters, server, UI
+npm test                       # 228 tests: engine, adapters, server, UI
 npx vercel dev                 # serves web/ and the api/ functions
 ```
 
 AI needs two server-side environment variables, never in the browser: `OPENAI_API_KEY` and `OPENAI_MODEL`. Without them the AI panel says it is offline and everything else works. The Kamino simulation uses the public Solana RPC by default; set `SOLANA_RPC_URL` to use your own. `package.json` pins `uuid@9` under `rpc-websockets` (an `@solana/web3.js` 1.x dependency of the SDK) because the serverless runtime cannot `require()` the ESM-only `uuid@14`.
+
+## Use it from the terminal
+
+The same adapters, engine and report run in Node without the UI, so the pre-flight can sit in a script, a bot or a CI job:
+
+```sh
+node bin/exitplan.mjs --sol <solana wallet> --hl <0x address> --target 500          # plain-text report
+node bin/exitplan.mjs --sol … --hl … --target 500 --keep-sol --json               # engine result as JSON
+```
+
+Flags: `--max-debt`, `--min-buffer`, `--deadline`, `--keep-sol`, `--no-hedge`, `--select <route id>`. It reads the same public endpoints and never signs or sends.
 
 ## Use the engine as a library
 
