@@ -1,6 +1,6 @@
 # ExitPlan scenario engine
 
-This module is an auditable, deterministic prototype. It **does not read or simulate an actual account, construct transactions, sign, bridge, or execute trades**. Every portfolio, candidate and result carries `evidence: "scenario"`. Every candidate has `executionSupported: false` and `comparisonOnly: true`.
+This module is an auditable, deterministic planner. It **does not construct transactions, sign, bridge, or execute trades**. A portfolio carries `evidence: "scenario"` (synthetic fixture) or `evidence: "imported"` (normalised by the read-only adapters in `web/adapters/`), and every candidate and result carries the same label. Every candidate has `executionSupported: false` and `comparisonOnly: true`. The exported `requiredMarginCents(shortSol, markPrice, rate)` helper lets adapters reproduce the engine's reserve rounding exactly.
 
 The cash endpoint means estimated **USDC in a Solana wallet**, not dollars in a bank account. Timings, transfer fees and liquidity are synthetic assumptions. They are not a supported bridge quote, a delivery promise, a liquidation calculation, or financial advice.
 
@@ -139,7 +139,7 @@ Retaining both positions with no new debt permits at most **$4,498.75** under th
 
 ## Rejection boundaries
 
-The engine fails closed for incomplete or stale snapshots; missing inputs; NaN, infinity, negatives or unsupported precision; impossible capacities; prices of zero; non-scenario data; existing lending debt; non-SOL positions; unified/portfolio-margin HL accounts; and isolated/strict-isolated margin modes. It also rejects unsupported constraint fields. No failed validation silently falls back to a plausible-looking live estimate.
+The engine fails closed for incomplete or stale snapshots; missing inputs; NaN, infinity, negatives or unsupported precision; impossible capacities; prices of zero; evidence labels other than scenario (synthetic) or imported (not synthetic); existing lending debt; non-SOL positions; unified/portfolio-margin HL accounts; and isolated/strict-isolated margin modes. It also rejects unsupported constraint fields. No failed validation silently falls back to a plausible-looking live estimate.
 
 All relevant account modes, portfolio-level risk, live depth, protocol restrictions, fee quotations, bridge/recipient details, gas, intermediate solvency, price drift and execution evidence must be implemented and verified separately before any real transaction path can exist.
 

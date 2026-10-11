@@ -1,5 +1,18 @@
 # ExitPlan integration boundaries
 
+## Browser adapters (read-only)
+
+`web/adapters/hyperliquid.mjs` — `importHyperliquid(address)` posts `clearinghouseState` and `allMids` to the public info API. Accepts a cross-margin SOL short or no SOL position; a SOL long or isolated-margin SOL is rejected. Other coins are allowed and their `marginUsed` is deducted from equity as locked. Equity below the 10% model reserve is rejected (`LEVERAGE_TOO_HIGH`). The mid is rounded to cents; the standard account mode is assumed, not verified.
+
+`web/adapters/solana.mjs` — `importSolana(address)` runs `getBalance` on publicnode, reads Kamino main-market obligations and quotes 1 SOL → USDC on Jupiter. Only USDC-only obligations are accepted; any borrow is reported as debt and the engine rejects it. The sale fee is `max(30, 50 + priceImpact bps)`.
+
+`web/adapters/rehearsal.mjs` — `simulateSellSol({ address, solAmount })` quotes the exact amount, builds an unsigned swap with Jupiter for the entered wallet and runs `simulateTransaction` with `sigVerify: false` and `replaceRecentBlockhash: true`. It reports success or the error, compute units and log count. It never calls `sendTransaction`.
+
+All adapters: 8-second timeout, `redirect: 'error'`, `credentials: 'omit'`, no caching, bounded response size, and an `AdapterError` with a code on every failure. The UI never substitutes previous or scenario numbers when a load fails.
+
+## Server (Vercel functions)
+
+
 ## Implemented: public Hyperliquid SOL reference
 
 `server/hyperliquid.mjs` exports:

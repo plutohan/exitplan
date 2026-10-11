@@ -1,70 +1,70 @@
-# ExitPlan — cash goals, explicit tradeoffs
+# ExitPlan — the cash you need, planned
 
-Private interactive proof of concept for comparing ways to source USDC across Solana and Hyperliquid without silently changing a user's debt or exposure constraints.
+**Live:** https://exitplan-rouge.vercel.app · **Hackathon:** Crypto World's Fair 2026 (Solana and Hyperliquid tracks) · **License:** MIT
 
-## Run checks and package
+You hold SOL on Solana, some USDC in Kamino, and a SOL short on Hyperliquid that hedges it. You need $5,000 in a Solana wallet by tomorrow. Which legs do you unwind? Selling spot breaks the hedge. Pulling margin risks the short. Borrowing adds debt you said you did not want.
 
-Requires Node.js 20+; no third-party runtime packages. DOM tests use the pinned development-only LinkeDOM dependency. Run `npm ci --ignore-scripts` before the tests in a fresh checkout.
-
-```sh
-npm ci --ignore-scripts
-node --test tests/*.test.mjs
-node scripts/assemble-worker.mjs
-bash scripts/build.sh
-node scripts/validate-artifact.mjs
-```
-
-The Site uses a single Cloudflare Worker assembled from `server/` and `web/`. `worker/index.js` and `dist/` are generated output. There are no signing keys, transaction-send endpoints, wallet permissions or custody features.
+ExitPlan takes a **cash goal plus the limits you refuse to break** (new-debt cap, keep-the-hedge, keep-SOL-quantity, minimum margin buffer, planning window), enumerates the ways to raise the cash across both venues, and shows every route that fits, every route that does not, and **why**. It then rehearses the chosen route step by step. Nothing is signed or sent.
 
 ## What is real in this build
 
-- Deterministic, executable JavaScript route enumeration and constraint checks, covered by tests
-- A browser UI that changes constraints, compares acceptable/rejected routes and rehearses a sequence
-- Optional public Hyperliquid market-data retrieval, explicitly separate from the synthetic portfolio
-- A structured-output AI intent adapter with an independently validated schema and an explicit confirmation step
+- **Real positions by address.** Enter a Solana wallet and a Hyperliquid address. The browser reads them read-only from public APIs: SOL balance (publicnode RPC), Kamino main-market USDC deposits and borrows (Kamino API), the SOL short, equity, withdrawable and other positions on Hyperliquid (public info API), and a live Jupiter quote for SOL → USDC.
+- **Real transaction simulation.** In the rehearsal, the Solana sell leg builds an unsigned Jupiter swap for the entered wallet and runs Solana `simulateTransaction` (signature verification off, fresh blockhash). You see success or the exact error, compute units and the quoted output. The transaction is never sent.
+- **Deterministic route engine** with integer-cent arithmetic, fail-closed validation and 142 automated tests, including a 650-plan conservation grid.
+- **AI intent with confirmation.** Describe the goal in your own words; a server function turns it into a constraint proposal (OpenAI structured output, validated against a schema), and nothing applies until you confirm.
+- **Public Hyperliquid market reference** (SOL perp mid) shown next to the planning price, never silently substituted.
 
-## What is not real / not verified
+## What is not real (yet)
 
-- All displayed portfolio balances, prices used for planning, fees, borrowing routes and margin parameters are labelled synthetic scenarios
-- The route engine is not a deployed lending or trading protocol and does not evaluate actual Kamino obligations
-- A rehearsal does not submit a transaction; it is not an RPC simulation, an executed bridge, or realized cash
-- Hyperliquid calculations are a bounded model, not a complete replica of its risk engine
-- The portfolio is not the user's wallet, and the app does not collect private keys or wallet addresses
-- No AI inference is available until an approved server-side API setup is completed. The UI shows this explicitly rather than simulating an AI response
-- Market-data receipt time is not a guarantee of exchange data freshness, and a perp midpoint is not an executable Solana swap quote
-- Route ranking means best among the evaluated discrete candidates, not a globally optimal financial decision
-- No production security audit, live cross-chain execution or browser visual QA is claimed
+- No execution. No wallet connection, signing, sending, bridging, borrowing or trading.
+- Hyperliquid order and withdrawal steps and the Kamino withdrawal step are listed but not simulated (they need signed exchange requests or a withdrawal transaction builder).
+- Fees other than the Jupiter-quoted sale, the 10% margin reserve, durations and borrowing terms are model assumptions and are labelled as such in the app.
+- The Hyperliquid account is assumed to be a standard account; the public API does not verify account mode. Margin used by other open positions is treated as locked.
+- Only Kamino obligations that hold USDC alone are supported; mixed-asset obligations and any existing borrow are rejected with a reason.
+- Ranking means lowest upfront fees among the evaluated candidates, not a global optimum or financial advice.
 
-## AI configuration
+## Try it
 
-The backend expects `OPENAI_API_KEY` and `OPENAI_MODEL` as server runtime secrets/configuration, never browser inputs or repository files. Configure through the approved hosting secret flow. The current build does not provision credentials, enable billing or call a live model. Mocked tests do not prove a live model integration.
+1. Open the live site. The default is a synthetic scenario (100 SOL, 3,000 USDC deposited, 100 SOL short). Walk the three guided scenarios.
+2. Switch **Portfolio source** to *Import by address*, paste a Solana wallet and a Hyperliquid address (public examples in `docs/demo-addresses.md`) and load.
+3. Set a target, compare routes, open a rejected route to read why, select a route and open the rehearsal. On the sell step, press *Simulate on Solana (read-only)*.
 
-Once configured, only the user's entered text and current explicit scenario constraints are sent to the OpenAI Responses API with storage disabled. The app does not send wallet addresses or live holdings. The UI must obtain user intent for any future extension to private portfolio data. The model receives no signing or arbitrary code tools. Responses are proposals, never execution instructions.
+## Run locally
+
+Requires Node.js 20+. The only dependency is LinkeDOM for DOM tests.
+
+```sh
+npm ci --ignore-scripts
+npm test                       # 142 tests: engine, adapters, server, UI
+npx vercel dev                 # serves web/ and the api/ functions
+```
+
+AI needs two server-side environment variables, never in the browser: `OPENAI_API_KEY` and `OPENAI_MODEL`. Without them the AI panel says it is offline and everything else works.
 
 ## Architecture
 
-- `web/engine.mjs`: scenario portfolio, route candidates, post-action invariants
-- `web/app.mjs`: condition editing, proposal confirmation, comparison and rehearsal
-- `server/hyperliquid.mjs`: public market adapter and constrained offline normalization
-- `server/intent.mjs`: intent extraction only, numeric/schema validation, failure closure
-- `server/app.mjs`: same-origin authenticated AI endpoint and static asset delivery
-- `scripts/assemble-worker.mjs`: deterministic self-contained Worker assembly
+```
+browser (web/)                                     Vercel functions (api/)
+  engine.mjs        pure route enumeration           status.js   capability flags
+  adapters/         read-only public API clients     market.js   Hyperliquid SOL mid
+    hyperliquid.mjs info API → engine shape          intent.js   OpenAI structured output
+    solana.mjs      RPC + Kamino + Jupiter → shape    server/     shared handlers + tests
+    rehearsal.mjs   Jupiter swap → simulateTransaction
+  app.mjs           constraints, comparison, rehearsal, AI confirmation
+```
 
-## Useful development gates
+Every adapter fails closed with a reason code; the UI never substitutes cached or scenario numbers when a load fails. The engine accepts `evidence: 'scenario'` or `'imported'` and carries that label onto every plan card.
 
-1. Pass the full final-code test suite and inspect scenario conservation and rejection reasons
-2. Verify UI behavior for reset, double clicks, condition changes during AI requests and interrupted rehearsal
-3. Verify an actual supported protocol's withdrawal calculation and transaction simulation before labelling any route executable
-4. Verify Hyperliquid abstraction mode before reading balance sources; never sum unified spot and perp account values
-5. Treat cross-chain steps as non-atomic; partial completion requires fresh state and a new plan
-6. Keep review, approval and execution separate. No risk threshold may be silently relaxed to satisfy a cash goal
+## Disclosure
 
-## Primary references
+All code was written on 2026-10-11 and 2026-10-12, inside the hackathon window, by a solo builder with AI coding assistance. The synthetic engine and UI (first commit) were built on the morning of 2026-10-11; the real-data adapters, Vercel deployment and English copy followed the same day. No code predates the window. Public addresses used in the demo belong to other people; they are read-only examples and are not ours.
 
-- https://hyperliquid.gitbook.io/hyperliquid-docs/trading/account-abstraction-modes
-- https://hyperliquid.gitbook.io/hyperliquid-docs/trading/margining
-- https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/info-endpoint
-- https://developers.circle.com/cctp/howtos/withdraw-usdc-from-hypercore-to-solana
-- https://developers.openai.com/api/docs/guides/structured-outputs
+## Documents
 
-This is a product and engineering prototype, not an investment recommendation or an assurance that a real-world exit is safe or available.
+- `docs/engine.md` — route engine contract and verified examples
+- `docs/integrations.md` — API boundaries and what each adapter does and does not claim
+- `docs/demo-addresses.md` — public example addresses
+- `docs/pitch-video-script.md`, `docs/demo-video-script.md`, `docs/submission-copy.md`
+- `docs/superpowers/specs/` and `docs/superpowers/plans/` — design spec and implementation plan
+
+This is a planning prototype, not investment, lending or tax advice, and not an assurance that any real exit is safe or available.
