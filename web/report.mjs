@@ -121,7 +121,11 @@ export function preflightChecks({ imported, portfolio, constraints }) {
 export function buildReport({ imported, portfolio, result, constraints, selectedId = null, link = '', now = () => new Date() }) {
   const hl = imported.hyperliquid, so = imported.solana, h = portfolio.hyperliquid, s = portfolio.solana;
   const yesNo = (v) => (v ? 'yes' : 'no');
-  const ranked = [...result.feasible], rejected = result.plans.filter((p) => !p.feasible);
+  const ranked = [...result.feasible];
+  // One line per rejected route name, keeping the attempt that came closest to the target.
+  const rejectedByName = new Map();
+  for (const p of result.plans.filter((plan) => !plan.feasible)) { const name = planName(p); const kept = rejectedByName.get(name); if (!kept || p.netCash > kept.netCash) rejectedByName.set(name, p); }
+  const rejected = [...rejectedByName.values()];
   const routeLine = (p, i) => `${i + 1}. ${p.id === selectedId ? '[selected] ' : ''}${planName(p)} — net ${money(p.netCash, true)} · upfront fees ${money(p.fees, true)} · ${carryText(p)[0].toLowerCase()} ${carryText(p)[1]} · new debt ${money(p.newDebt)} · steps: ${p.steps.map((st) => `${stepName(st)} ${st.unit === 'USDC' ? money(st.amount, true) : num(st.amount) + ' SOL'}`).join(' → ')}`;
   return [
     `# ExitPlan pre-flight report · ${now().toISOString().replace('T', ' ').slice(0, 16)} UTC`,

@@ -63,3 +63,13 @@ test('constraint ranges are validated before any network call, an unknown --sele
   assert.equal(await run(['--sol', WALLET, '--hl', HL, '--select', 'nope'], { fetchImpl, write: unknown.write }), 2);
   assert.match(unknown.text(), /unknown route id/i);
 });
+
+test('the report lists each rejected route name once, keeping the attempt closest to the target', async () => {
+  const { fetchImpl } = await publicStub();
+  const out = capture();
+  assert.equal(await run(['--sol', WALLET, '--hl', HL, '--target', '3000', '--no-hedge'], { fetchImpl, write: out.write }), 0);
+  const section = out.text().split('## Rejected routes')[1].split('\n\n')[0];
+  const names = section.split('\n').filter(l => l.startsWith('- ')).map(l => l.slice(2).split(' — ')[0]);
+  assert.ok(names.length > 0);
+  assert.equal(new Set(names).size, names.length, 'duplicate rejected names: ' + names.join(' | '));
+});

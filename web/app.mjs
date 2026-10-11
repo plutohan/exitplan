@@ -111,7 +111,7 @@ function displayedPlans() {
   return chosen.slice(0, 4);
 }
 function relaxations() {
-  const half = Math.max(0, Math.floor(constraints.minHlBuffer / 2)),
+  const half = Math.max(0, Math.min(Math.floor(constraints.minHlBuffer / 2), Math.floor(initialHlBuffer()))), // never propose a floor the buffer cannot meet
     debtCap = Math.min(5000, Math.floor(portfolio.solana.borrow.capacity)),
     maxNoSale = Math.floor(result.maximumWithoutSelling);
   return [
@@ -924,10 +924,17 @@ const EXAMPLE = {
   solana: 'DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK',
   hyperliquid: '0x4bdf1130109e9c1bc921d8979ea66284d9c92f37',
 };
-$('#try-live').addEventListener('click', () => {
+$('#try-live').addEventListener('click', async () => {
   $('#source-import').checked = true;
   setSource('import');
-  $('#load-example').click();
+  // Land where the Hyperliquid evidence is one click away: a $500 goal makes the paired trim route feasible on the public example.
+  $('#target').value = '500';
+  $('#target').dispatchEvent(new Event('input', { bubbles: true }));
+  $('#target').dispatchEvent(new Event('change', { bubbles: true }));
+  $('#solana-address').value = EXAMPLE.solana;
+  $('#hl-address').value = EXAMPLE.hyperliquid;
+  await loadPositions();
+  if (imported && result?.plans?.some((p) => p.id === 'paired-unwind' && p.feasible)) selectPlan('paired-unwind');
 });
 $('#load-example').addEventListener('click', () => {
   setSource('import');

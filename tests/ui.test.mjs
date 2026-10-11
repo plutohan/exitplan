@@ -1161,3 +1161,29 @@ test('a default account with no equity is flagged as not establishable, and the 
   await ui.click('#open-evidence');
   assert.match(ui.get('#dialog-body').textContent, /slippage allowance 0\.10%/);
 });
+
+test('the hero button lands on a $500 target with the paired route selected, one click from the Hyperliquid rehearsal', async t => {
+  const ui = await mount(t, { externalResponse: external() });
+  await ui.click('#try-live');
+  for (let i = 0; i < 40 && !/Loaded|Could not/.test(ui.get('#import-status').textContent); i++) await flush();
+  await flush();
+  assert.equal(ui.get('#target').value, '500');
+  assert.equal(ui.get('.plan-card.selected').dataset.plan, 'paired-unwind');
+  assert.match(ui.get('#decision-content').textContent, /Trim spot and short together/);
+});
+
+test('the floor suggestion never proposes a floor the buffer cannot meet', async t => {
+  const hl = structuredClone(hlShort);
+  const sol = hl.assetPositions.find(a => a.position.coin === 'SOL').position;
+  const locked = hl.assetPositions.filter(a => a.position.coin !== 'SOL').reduce((sum, a) => sum + Math.max(Number(a.position.marginUsed), 0.1 * Number(a.position.positionValue)), 0);
+  const reserve = requiredMarginCents(-Number(sol.szi), Math.round((Number(sol.positionValue) / Math.abs(Number(sol.szi))) * 100) / 100, 0.1) / 100;
+  hl.marginSummary.accountValue = String(locked + reserve + 800);
+  hl.withdrawable = '0';
+  const ui = await mount(t, { externalResponse: external({ hl }) });
+  await importPositions(ui);
+  await ui.input('#min-buffer', 2000);
+  await ui.input('#target', 50000); // nothing fits, so the banner offers relaxations
+  const labels = [...ui.document.querySelectorAll('[data-suggestion]')].map(b => b.textContent);
+  const floor = labels.find(l => /Lower the margin floor/.test(l));
+  if (floor) assert.match(floor, /Lower the margin floor to \$(7\d\d|800)\b/, `half the floor would be $1,000, above the $800 buffer: ${floor}`);
+});

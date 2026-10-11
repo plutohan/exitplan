@@ -44,3 +44,4 @@ body{font-size:14px}.eyebrow{font-size:10px}.workspace-label{font-size:10px}.nav
 .hero-actions{margin-top:10px}#try-live[hidden]{display:none}
 #toast{pointer-events:none}
 .simulation-links{font-size:11px;margin:6px 0 0;color:#bdcbb2}.simulation-links a{color:var(--lime)}.link-button{background:none;border:0;color:var(--lime);text-decoration:underline;cursor:pointer;font:inherit;padding:0}
+.rehearsal-step>div{min-width:0;flex:1}.simulation-note,.simulation-links,.order-preview,.rejection{overflow-wrap:anywhere}
