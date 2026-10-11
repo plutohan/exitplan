@@ -28,6 +28,10 @@
   "functions": {
     "api/intent.js": {
       "maxDuration": 30
+    },
+    "api/kamino-withdraw.js": {
+      "maxDuration": 60,
+      "memory": 1024
     }
   }
-}
+}\n

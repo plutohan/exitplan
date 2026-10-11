@@ -1,5 +1,6 @@
 import { interpretIntent } from './intent.mjs';
 import { getMarketSnapshot } from './hyperliquid.mjs';
+import { simulateKaminoWithdraw } from './kamino.mjs';
 
 const MAX_REQUEST_BYTES = 8000;
 const MAX_RATE_LIMIT_USERS = 1000;
@@ -62,7 +63,7 @@ async function readIntentBody(request) {
   }
 }
 
-export function createApp(assets, { interpretIntentImpl = interpretIntent, marketSnapshotImpl = getMarketSnapshot, now = Date.now } = {}) {
+export function createApp(assets, { interpretIntentImpl = interpretIntent, marketSnapshotImpl = getMarketSnapshot, kaminoWithdrawImpl = simulateKaminoWithdraw, now = Date.now } = {}) {
   // Best-effort, isolate-local protection only; production needs an edge-wide quota.
   const limits = new Map();
   return {
@@ -77,7 +78,8 @@ export function createApp(assets, { interpretIntentImpl = interpretIntent, marke
         try { return json(await marketSnapshotImpl()); }
         catch { return json({ error: 'Public market price is unavailable', evidence: 'unavailable' }, 502); }
       }
-      if (url.pathname === '/api/intent') {
+      const postRoutes = { '/api/intent': interpretIntentImpl, '/api/kamino-withdraw': kaminoWithdrawImpl };
+      if (Object.hasOwn(postRoutes, url.pathname)) {
         if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, { allow: 'POST' });
         // Best-effort identity: first hop of the proxy's forwarded chain, or one shared bucket.
         const user = request.headers.get('x-forwarded-for')?.split(',')[0].trim() || 'shared';
@@ -101,7 +103,7 @@ export function createApp(assets, { interpretIntentImpl = interpretIntent, marke
         let body;
         try { body = JSON.parse(input.text); }
         catch { return json({ error: 'Invalid JSON' }, 400); }
-        const result = await interpretIntentImpl(body, env);
+        const result = await postRoutes[url.pathname](body, env);
         return json(result.body, result.status);
       }
       if (request.method !== 'GET' && request.method !== 'HEAD') return json({ error: 'Method not allowed' }, 405, { allow: 'GET, HEAD' });

@@ -28,3 +28,32 @@ export async function simulateSellSol({ address, solAmount, fetchImpl = globalTh
     calls: ['quote', 'swap', 'simulateTransaction'],
   };
 }
+
+/** Read-only Kamino withdrawal rehearsal through the same-origin server function (the SDK runs there). */
+export async function simulateKaminoWithdraw({ address, amountUsdc, fetchImpl = globalThis.fetch, timeoutMs = 45000 }) {
+  if (!isSolanaAddress(address)) throw new AdapterError('INVALID_ADDRESS', 'A Solana wallet address is required to build the unsigned transaction');
+  if (typeof amountUsdc !== 'number' || !Number.isFinite(amountUsdc) || amountUsdc <= 0) throw new AdapterError('INVALID_AMOUNT', 'Withdrawal amount must be a positive USDC amount');
+  let response;
+  try {
+    response = await fetchImpl('/api/kamino-withdraw', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ wallet: address, amountUsdc }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (error) {
+    throw new AdapterError('NETWORK_ERROR', 'The simulation service could not be reached', { cause: error });
+  }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new AdapterError(response.status === 404 ? 'NO_OBLIGATION' : 'HTTP_ERROR', data.error || `Simulation service returned HTTP ${response.status}`);
+  return {
+    ok: data.ok === true,
+    error: data.error ?? null,
+    unitsConsumed: data.unitsConsumed ?? null,
+    logCount: data.logCount ?? 0,
+    instructions: Array.isArray(data.instructions) ? data.instructions.map(String) : [],
+    amountUsdc: data.amountUsdc,
+    observedAt: data.observedAt ?? null,
+  };
+}

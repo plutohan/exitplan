@@ -10,5 +10,9 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "@kamino-finance/klend-sdk": "^13.0.2",
+    "@solana/kit": "^2.3.0"
   }
 }

@@ -1,9 +1,9 @@
 # Verification — 2026-10-11
 
-`node --test tests/*.test.mjs`: 178 tests passed, 0 failed.
+`node --test tests/*.test.mjs`: 185 tests passed, 0 failed.
 
 - 27 engine tests (deterministic planner, imported evidence, zero-short account, reserve helper) and 1 conservation grid over 650 feasible scenario plans
-- 13 Hyperliquid adapter tests, 7 Solana adapter tests, 4 rehearsal simulation tests, all on captured real API responses in `tests/fixtures/`
+- Hyperliquid, Solana and rehearsal adapter tests on captured real API responses in `tests/fixtures/`, plus server-side Kamino simulation tests with an injected fake SDK that pins the exact build and simulate calls
 - 17 legacy server-side Hyperliquid market tests, 9 intent unit tests, 39 server security tests (origin host check, per-IP limiter, body caps, model-output validation)
 - 30 LinkeDOM tests that run the real app module: guided scenarios, controls and reset, AI proposals and late-response races, rehearsal, import by address, import failure and debt cases, import races (reset, source switch, constraint edit), read-only simulation in the rehearsal, guide hiding
 

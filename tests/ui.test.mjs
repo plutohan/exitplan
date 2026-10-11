@@ -35,7 +35,7 @@ const external = ({ hl = hlShort, kamino = kaminoFixture, jupiter = jupiterFixtu
   assert.fail('unexpected external request ' + call.url);
 };
 
-async function mount(t, { aiConfigured = false, intentResponse, marketResponse, externalResponse, hash = '' } = {}) {
+async function mount(t, { aiConfigured = false, intentResponse, marketResponse, externalResponse, kaminoResponse, hash = '' } = {}) {
   const { window } = parseHTML(html);
   const { document } = window;
   const calls = [];
@@ -84,6 +84,7 @@ async function mount(t, { aiConfigured = false, intentResponse, marketResponse, 
     if (url.pathname === '/api/status') return json({ aiConfigured, version: '0.1.0', portfolioEvidence: 'scenario', executionEnabled: false });
     if (url.pathname === '/api/market') return marketResponse ? await marketResponse(call) : json({ error: 'Market snapshot unavailable' }, 502);
     if (url.pathname === '/api/intent') return intentResponse ? await intentResponse(call) : json({ mode: 'unavailable', error: 'AI is not configured — compare with the conditions below instead' }, 503);
+    if (url.pathname === '/api/kamino-withdraw') return kaminoResponse ? await kaminoResponse(call) : json({ error: 'Kamino simulation unavailable' }, 502);
     assert.fail(`Unexpected network request: ${call.method} ${url.href}`);
   };
   install('window', window);
@@ -165,7 +166,7 @@ function currentConstraints(ui) {
 }
 
 function assertNoExecutionCalls(ui) {
-  assert.ok(ui.calls.every(call => ['/api/status', '/api/intent', '/api/market'].includes(call.path) || EXTERNAL_HOSTS.includes(call.host)), 'Only capability, intent interpretation, read-only market and public data endpoints may be contacted');
+  assert.ok(ui.calls.every(call => ['/api/status', '/api/intent', '/api/market', '/api/kamino-withdraw'].includes(call.path) || EXTERNAL_HOSTS.includes(call.host)), 'Only capability, intent interpretation, read-only market, read-only simulation and public data endpoints may be contacted');
   assert.ok(ui.calls.every(call => call.path !== '/api/intent' || call.method === 'POST'));
 }
 
@@ -858,4 +859,23 @@ test('the page ships an inline icon so browsers do not request a missing favicon
   const icon = ui.document.querySelector('link[rel="icon"]');
   assert.ok(icon, 'link[rel=icon] present');
   assert.match(icon.getAttribute('href'), /^data:image\/svg\+xml/);
+});
+
+test('imported rehearsal simulates the Kamino withdrawal through the server function', async t => {
+  const ui = await mount(t, { externalResponse: external(), kaminoResponse: call => { const body = JSON.parse(call.body); assert.equal(body.wallet, WALLET); assert.ok(body.amountUsdc > 0); return json({ ok: true, error: null, unitsConsumed: 112573, logCount: 38, instructions: ['RefreshReserve[r]', 'RefreshObligation[o]', 'withdrawV2'], amountUsdc: body.amountUsdc }); } });
+  await importPositions(ui);
+  await ui.input('#target', 2000); // wallet USDC + Kamino withdrawal
+  assert.equal(ui.get('.plan-card.selected').dataset.plan.includes('lending') || ui.get('.plan-card.selected').dataset.plan === 'withdraw-lending', true);
+  await ui.click('#rehearse');
+  await ui.click('#rehearsal-next'); // past the wallet step
+  assert.match(ui.get('#dialog-body').textContent, /Withdraw deposited USDC/);
+  const button = ui.get('#simulate-step');
+  assert.match(button.textContent, /Kamino/);
+  await ui.click(button);
+  for (let i = 0; i < 60 && /Simulating/.test(ui.get('#simulation-result').textContent); i++) await flush();
+  assert.match(ui.get('#simulation-result').textContent, /Simulation succeeded/);
+  assert.match(ui.get('#simulation-result').textContent, /112,573/);
+  assert.match(ui.get('#simulation-result').textContent, /withdrawV2/);
+  assert.doesNotMatch(ui.get('#dialog-body').textContent, /withdrawal transaction is not built/);
+  assertNoExecutionCalls(ui);
 });

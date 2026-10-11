@@ -1,7 +1,7 @@
 import { createDemoPortfolio, defaultConstraints, planExit, requiredMarginCents } from './engine.mjs';
 import { importHyperliquid, estimateLiquidationAfter } from './adapters/hyperliquid.mjs';
 import { importSolana, isSolanaAddress } from './adapters/solana.mjs';
-import { simulateSellSol } from './adapters/rehearsal.mjs';
+import { simulateSellSol, simulateKaminoWithdraw } from './adapters/rehearsal.mjs';
 
 const $ = (query, root = document) => root.querySelector(query);
 const $$ = (query, root = document) => [...root.querySelectorAll(query)];
@@ -561,7 +561,7 @@ function openEvidence(all = false) {
     : `<p>Every balance, price, fee and duration on this screen is a reproducible synthetic input. No real account or on-chain state was read.</p><h3>Synthetic portfolio</h3><div class="assumption-grid"><div class="assumption-item"><span>SOL spot · reference price</span><b>100 SOL · $100</b></div><div class="assumption-item"><span>Hyperliquid SOL short</span><b>100 SOL · $100</b></div><div class="assumption-item"><span>Solana deposit</span><b>3,000 USDC</b></div><div class="assumption-item"><span>HL collateral · simple required margin</span><b>$4,000 · $1,000</b></div></div>`;
   const body =
     intro +
-    `<h3>Calculation rules</h3><ul><li>Net cash = withdrawals + sales + new debt − fees paid from cash</li><li>The short's notional is not cash. Short-reduction fees are deducted from HL collateral separately.</li><li>HL buffer = remaining collateral − short notional × assumed 10% reserve. It is not a liquidation price or protocol health metric.</li><li>${isImported ? `Keeping net exposure means selling the same SOL quantity that the short is reduced by. Starting net exposure: ${num(portfolio.solana.sol - portfolio.hyperliquid.shortSol)} SOL.` : 'Keeping net exposure means selling the same SOL quantity that the short is reduced by, so the starting net SOL exposure is preserved. The starting ratio is 1:1.'}</li><li>Net USDC is assumed to arrive in a Solana wallet, not as fiat in a bank account.</li><li>A fixed set of combinations is evaluated and sorted by lowest upfront fees. This is not a global optimum or investment advice.</li></ul><h3>Estimated fees and borrowing</h3><p>Deposit withdrawal $0.25 · SOL sale ${(portfolio.fees.solSaleBps / 100).toFixed(2)}% · short reduction 0.05% · HL transfer $1.00 · loan origination $0.50. New debt shows one day of interest at an assumed 8% APR; total interest is unknown without a repayment date. There is no real borrowing adapter.</p>${current ? `<h3>Cash flow of the selected route</h3><div class="evidence-line"><b>Gross inflow ${money(current.grossProceeds, true)}</b> − fees from cash ${money(current.feesFromProceeds, true)} = net cash ${money(current.netCash, true)}</div><div class="evidence-line">Fees deducted from HL collateral ${money(current.feesFromCollateral, true)} · total upfront fees ${money(current.fees, true)}</div>` : ''}${all ? `<h3>All evaluated candidates · ${result.plans.length}</h3><p>Routes of the same kind are evaluated separately for each mix of deposits, collateral and sales.</p>${[...result.feasible, ...result.plans.filter((p) => !p.feasible)].map((p) => `<div class="evidence-line"><b>${p.feasible ? 'Feasible' : 'Excluded'} · ${esc(planName(p))}</b><br>Net cash ${money(p.netCash)} · fees ${money(p.fees, true)} · SOL sold ${num(p.solSold)} · new debt ${money(p.newDebt)}${p.feasible ? '' : '<br>' + esc(rejectionText(p))}</div>`).join('')}` : ''}<div class="dialog-disclaimer">Not supported: wallet connection, verification of live prices, liquidity, bridges or account modes, real borrowing, transaction signing or sending, and full modelling of price moves, funding, slippage or liquidation risk. ${isImported ? 'The rehearsal can simulate the Solana sell leg read-only; the other legs are listed, not simulated.' : 'The rehearsal is an on-screen walkthrough only.'}</div>`;
+    `<h3>Calculation rules</h3><ul><li>Net cash = withdrawals + sales + new debt − fees paid from cash</li><li>The short's notional is not cash. Short-reduction fees are deducted from HL collateral separately.</li><li>HL buffer = remaining collateral − short notional × assumed 10% reserve. It is not a liquidation price or protocol health metric.</li><li>${isImported ? `Keeping net exposure means selling the same SOL quantity that the short is reduced by. Starting net exposure: ${num(portfolio.solana.sol - portfolio.hyperliquid.shortSol)} SOL.` : 'Keeping net exposure means selling the same SOL quantity that the short is reduced by, so the starting net SOL exposure is preserved. The starting ratio is 1:1.'}</li><li>Net USDC is assumed to arrive in a Solana wallet, not as fiat in a bank account.</li><li>A fixed set of combinations is evaluated and sorted by lowest upfront fees. This is not a global optimum or investment advice.</li></ul><h3>Estimated fees and borrowing</h3><p>Deposit withdrawal $0.25 · SOL sale ${(portfolio.fees.solSaleBps / 100).toFixed(2)}% · short reduction 0.05% · HL transfer $1.00 · loan origination $0.50. New debt shows one day of interest at an assumed 8% APR; total interest is unknown without a repayment date. There is no real borrowing adapter.</p>${current ? `<h3>Cash flow of the selected route</h3><div class="evidence-line"><b>Gross inflow ${money(current.grossProceeds, true)}</b> − fees from cash ${money(current.feesFromProceeds, true)} = net cash ${money(current.netCash, true)}</div><div class="evidence-line">Fees deducted from HL collateral ${money(current.feesFromCollateral, true)} · total upfront fees ${money(current.fees, true)}</div>` : ''}${all ? `<h3>All evaluated candidates · ${result.plans.length}</h3><p>Routes of the same kind are evaluated separately for each mix of deposits, collateral and sales.</p>${[...result.feasible, ...result.plans.filter((p) => !p.feasible)].map((p) => `<div class="evidence-line"><b>${p.feasible ? 'Feasible' : 'Excluded'} · ${esc(planName(p))}</b><br>Net cash ${money(p.netCash)} · fees ${money(p.fees, true)} · SOL sold ${num(p.solSold)} · new debt ${money(p.newDebt)}${p.feasible ? '' : '<br>' + esc(rejectionText(p))}</div>`).join('')}` : ''}<div class="dialog-disclaimer">Not supported: wallet connection, verification of live prices, liquidity, bridges or account modes, real borrowing, transaction signing or sending, and full modelling of price moves, funding, slippage or liquidation risk. ${isImported ? 'The rehearsal can simulate the Solana sell leg and the Kamino withdrawal read-only; Hyperliquid legs are listed, not simulated.' : 'The rehearsal is an on-screen walkthrough only.'}</div>`;
   openDialog(
     'Where the numbers come from',
     body,
@@ -579,10 +579,12 @@ function notSimulatedReason(step) {
         ? 'Not simulated: a Hyperliquid order needs a signed exchange request'
         : step.action.startsWith('Borrow')
           ? 'Not simulated: borrowing is a comparison only'
-          : 'Not simulated: the Kamino withdrawal transaction is not built in this version';
+          : 'Not simulated';
 }
+const simulatable = (step) => step.action.startsWith('Sell SOL') || step.action.startsWith('Withdraw lending');
 function simulationBlock(step) {
-  if (!step.action.startsWith('Sell SOL')) return `<p class="simulation-note">${esc(notSimulatedReason(step))}</p>`;
+  if (!simulatable(step)) return `<p class="simulation-note">${esc(notSimulatedReason(step))}</p>`;
+  const kamino = step.action.startsWith('Withdraw lending');
   const sim = rehearsal.simulation;
   const text = !sim
     ? ''
@@ -591,19 +593,23 @@ function simulationBlock(step) {
       : sim.error
         ? `Simulation unavailable: ${sim.error}`
         : sim.result.ok
-          ? `Simulation succeeded · ${num(sim.result.unitsConsumed ?? 0)} CU · quoted ${money(sim.result.quotedUsdc, true)} USDC vs plan estimate ${money(step.amount * portfolio.solana.solPrice * (1 - portfolio.fees.solSaleBps / 10000), true)} · ${sim.result.logCount} log lines · nothing was sent`
+          ? kamino
+            ? `Simulation succeeded · ${num(sim.result.unitsConsumed ?? 0)} CU · ${sim.result.instructions.length} instructions: ${sim.result.instructions.map((label) => label.replace(/\[.*$/, '')).join(', ')} · ${sim.result.logCount} log lines · nothing was sent`
+            : `Simulation succeeded · ${num(sim.result.unitsConsumed ?? 0)} CU · quoted ${money(sim.result.quotedUsdc, true)} USDC vs plan estimate ${money(step.amount * portfolio.solana.solPrice * (1 - portfolio.fees.solSaleBps / 10000), true)} · ${sim.result.logCount} log lines · nothing was sent`
           : `Simulation failed: ${sim.result.error}`;
-  return `<div class="simulation"><button id="simulate-step" class="secondary-button" type="button" ${sim?.pending ? 'disabled' : ''}>Simulate on Solana (read-only)</button><p id="simulation-result" class="simulation-note ${sim && !sim.pending && (sim.error || !sim.result.ok) ? 'error' : ''}">${esc(text)}</p></div>`;
+  return `<div class="simulation"><button id="simulate-step" class="secondary-button" type="button" ${sim?.pending ? 'disabled' : ''}>${kamino ? 'Simulate Kamino withdrawal (read-only)' : 'Simulate on Solana (read-only)'}</button><p id="simulation-result" class="simulation-note ${sim && !sim.pending && (sim.error || !sim.result.ok) ? 'error' : ''}">${esc(text)}</p></div>`;
 }
 async function runSimulation() {
   if (!rehearsal || !imported) return;
   const current = rehearsal,
     step = current.plan.steps[current.index];
-  if (!step || !step.action.startsWith('Sell SOL')) return;
+  if (!step || !simulatable(step)) return;
   current.simulation = { pending: true };
   renderRehearsal();
   try {
-    const result = await simulateSellSol({ address: imported.solana.address, solAmount: step.amount });
+    const result = step.action.startsWith('Withdraw lending')
+      ? await simulateKaminoWithdraw({ address: imported.solana.address, amountUsdc: step.amount })
+      : await simulateSellSol({ address: imported.solana.address, solAmount: step.amount });
     if (rehearsal !== current || current.version !== revision) return;
     current.simulation = { result };
   } catch (error) {

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { simulateSellSol, AdapterError } from '../web/adapters/rehearsal.mjs';
+import { simulateSellSol, simulateKaminoWithdraw, AdapterError } from '../web/adapters/rehearsal.mjs';
 
 const quote = JSON.parse(await readFile(new URL('./fixtures/jupiter-quote.json', import.meta.url), 'utf8'));
 const WALLET = 'DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK';
@@ -64,4 +64,19 @@ test('rejects a bad address or amount without fetching', async () => {
   for (const solAmount of [0, -1, NaN, 'two']) {
     await assert.rejects(simulateSellSol({ address: WALLET, solAmount, fetchImpl }), e => e.code === 'INVALID_AMOUNT');
   }
+});
+
+test('the Kamino withdrawal simulation posts to the same-origin function and maps the answer', async () => {
+  let seen;
+  const fetchImpl = async (url, init = {}) => { seen = { url, init }; return Response.json({ ok: true, error: null, unitsConsumed: 112573, logCount: 38, instructions: ['RefreshReserve[r]', 'withdrawV2'], amountUsdc: 25 }); };
+  const result = await simulateKaminoWithdraw({ address: WALLET, amountUsdc: 25, fetchImpl });
+  assert.equal(seen.url, '/api/kamino-withdraw');
+  assert.equal(seen.init.method, 'POST');
+  assert.deepEqual(JSON.parse(seen.init.body), { wallet: WALLET, amountUsdc: 25 });
+  assert.equal(result.ok, true);
+  assert.equal(result.unitsConsumed, 112573);
+  assert.deepEqual(result.instructions, ['RefreshReserve[r]', 'withdrawV2']);
+  await assert.rejects(simulateKaminoWithdraw({ address: WALLET, amountUsdc: 25, fetchImpl: async () => Response.json({ error: 'No Kamino obligation' }, { status: 404 }) }), e => e instanceof AdapterError && /obligation/.test(e.message));
+  await assert.rejects(simulateKaminoWithdraw({ address: 'bad', amountUsdc: 25, fetchImpl: () => assert.fail('must not fetch') }), e => e.code === 'INVALID_ADDRESS');
+  await assert.rejects(simulateKaminoWithdraw({ address: WALLET, amountUsdc: 0, fetchImpl: () => assert.fail('must not fetch') }), e => e.code === 'INVALID_AMOUNT');
 });

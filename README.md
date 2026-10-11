@@ -9,8 +9,8 @@ ExitPlan takes a **cash goal plus the limits you refuse to break** (new-debt cap
 ## What is real in this build
 
 - **Real positions by address, Phantom connect, or a deep link.** Enter a Solana wallet and a Hyperliquid address, press *Connect Phantom (read-only)* (it reads the Solana address and the Phantom Perps 0x address, never signs), open a `#sol=…&hl=…&target=…` link, or press *Load public example*. The browser reads them read-only from public APIs: SOL balance (publicnode RPC), Kamino main-market USDC deposits and borrows (Kamino API), the SOL short, equity, withdrawable and other positions on Hyperliquid (public info API), the HyperCore account mode (`userAbstraction`), USDC already sitting in the wallet (Jupiter balances, used first at zero fee), and a live Jupiter quote for SOL → USDC.
-- **Real transaction simulation.** In the rehearsal, the Solana sell leg builds an unsigned Jupiter swap for the entered wallet and runs Solana `simulateTransaction` (signature verification off, fresh blockhash). You see success or the exact error, compute units and the quoted output. The transaction is never sent.
-- **Deterministic route engine** that enumerates withdrawals, sales, paired unwinds, short-only reductions with released margin, and borrowing comparisons, with integer-cent arithmetic, fail-closed validation and 178 automated tests, including a 650-plan conservation grid.
+- **Real transaction simulation, two legs.** In the rehearsal, the Solana sell leg builds an unsigned Jupiter swap for the entered wallet and runs Solana `simulateTransaction` (signature verification off, fresh blockhash). The Kamino withdrawal leg builds the real unsigned withdraw transaction with Kamino's SDK in a server function (create ATA if needed, refresh reserve, refresh obligation, withdraw and redeem) and simulates it the same way. You see success or the exact program error, compute units and the instruction list. Nothing is ever sent.
+- **Deterministic route engine** that enumerates withdrawals, sales, paired unwinds, short-only reductions with released margin, and borrowing comparisons, with integer-cent arithmetic, fail-closed validation and 185 automated tests, including a 650-plan conservation grid.
 - **AI intent with confirmation.** Describe the goal in your own words; a server function turns it into a constraint proposal (OpenAI structured output, validated against a schema), and nothing applies until you confirm.
 - **Liquidation price before and after.** The exchange's own liquidation price is shown at load, and after a route an estimate anchored on that price (maintenance margin = 1 / (2 × max leverage)) shows where it would move. It is labelled an estimate.
 - **Kamino withdraw capacity capped by reserve liquidity** read from Kamino's reserve metrics at load.
@@ -19,7 +19,7 @@ ExitPlan takes a **cash goal plus the limits you refuse to break** (new-debt cap
 ## What is not real (yet)
 
 - No execution. No wallet connection, signing, sending, bridging, borrowing or trading.
-- Hyperliquid order and withdrawal steps and the Kamino withdrawal step are listed but not simulated (they need signed exchange requests or a withdrawal transaction builder).
+- Hyperliquid order and withdrawal steps are listed but not simulated (they need signed exchange requests).
 - Fees other than the Jupiter-quoted sale, the 10% margin reserve, durations and borrowing terms are model assumptions and are labelled as such in the app.
 - The Hyperliquid account mode is verified on HyperCore: standard accounts (abstraction `disabled` or `default`) are accepted; unified-account, portfolio-margin and DEX-abstraction accounts are rejected with the reason, because their perp state is not meaningful on its own. Margin used by other open positions is treated as locked.
 - Only Kamino obligations that hold USDC alone are supported; mixed-asset obligations and any existing borrow are rejected with a reason.
@@ -35,15 +35,15 @@ ExitPlan takes a **cash goal plus the limits you refuse to break** (new-debt cap
 
 ## Run locally
 
-Requires Node.js 20+. The only dependency is LinkeDOM for DOM tests.
+Requires Node.js 20+. The browser app has no dependencies; the Kamino simulation function uses `@kamino-finance/klend-sdk` and `@solana/kit` on the server, and LinkeDOM powers the DOM tests.
 
 ```sh
 npm ci --ignore-scripts
-npm test                       # 178 tests: engine, adapters, server, UI
+npm test                       # 185 tests: engine, adapters, server, UI
 npx vercel dev                 # serves web/ and the api/ functions
 ```
 
-AI needs two server-side environment variables, never in the browser: `OPENAI_API_KEY` and `OPENAI_MODEL`. Without them the AI panel says it is offline and everything else works.
+AI needs two server-side environment variables, never in the browser: `OPENAI_API_KEY` and `OPENAI_MODEL`. Without them the AI panel says it is offline and everything else works. The Kamino simulation uses the public Solana RPC by default; set `SOLANA_RPC_URL` to use your own.
 
 ## Use the engine as a library
 
@@ -70,6 +70,7 @@ flowchart LR
   P --> E[engine.mjs<br/>pure route enumeration + constraint checks]
   E --> U[app.mjs<br/>compare · reject reasons · suggestions · rehearsal]
   U --> R[adapters/rehearsal.mjs<br/>Jupiter swap build → simulateTransaction]
+  U --> K[api/kamino-withdraw.js<br/>Kamino SDK → unsigned withdraw → simulateTransaction]
   U --> I[api/intent.js<br/>OpenAI structured output → proposal → confirm]
 ```
 
@@ -80,7 +81,8 @@ browser (web/)                                     Vercel functions (api/)
   adapters/         read-only public API clients     market.js   Hyperliquid SOL mid
     hyperliquid.mjs info API → engine shape          intent.js   OpenAI structured output
     solana.mjs      RPC + Kamino + Jupiter → shape    server/     shared handlers + tests
-    rehearsal.mjs   Jupiter swap → simulateTransaction
+    rehearsal.mjs   Jupiter swap → simulateTransaction; Kamino withdraw via api/
+                                                       kamino-withdraw.js  Kamino SDK → unsigned withdraw → simulateTransaction
   app.mjs           constraints, comparison, rehearsal, AI confirmation
 ```
 

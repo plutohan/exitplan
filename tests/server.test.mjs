@@ -259,3 +259,16 @@ test('configured intent rejects invalid inputs without any API call', async () =
     assert.equal(result.status, 400);
   }
 });
+
+test('kamino-withdraw route is same-origin JSON only and passes the parsed body to the simulator', async () => {
+  let received;
+  const app = createApp(assets, { kaminoWithdrawImpl: async body => { received = body; return { status: 200, body: { ok: true } }; } });
+  const good = new Request(`${origin}/api/kamino-withdraw`, { method: 'POST', body: JSON.stringify({ wallet: 'W', amountUsdc: 12.5 }), headers: { origin, 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.9' } });
+  assert.equal((await app.fetch(good)).status, 200);
+  assert.deepEqual(received, { wallet: 'W', amountUsdc: 12.5 });
+  const crossSite = new Request(`${origin}/api/kamino-withdraw`, { method: 'POST', body: '{}', headers: { origin: 'https://attacker.example', 'content-type': 'application/json' } });
+  assert.equal((await app.fetch(crossSite)).status, 403);
+  assert.equal((await app.fetch(new Request(`${origin}/api/kamino-withdraw`))).status, 405);
+  const text = new Request(`${origin}/api/kamino-withdraw`, { method: 'POST', body: '{}', headers: { origin, 'content-type': 'text/plain' } });
+  assert.equal((await app.fetch(text)).status, 415);
+});
