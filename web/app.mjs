@@ -134,7 +134,7 @@ function outcomeKey(p) {
 function displayedPlans() {
   const chosen = [];
   const add = (p) => {
-    if (p && !chosen.some((x) => x.id === p.id)) chosen.push(p);
+    if (p && !chosen.some((x) => x.id === p.id || (x.feasible === p.feasible && outcomeKey(x) === outcomeKey(p)))) chosen.push(p);
   };
   const selected = result.plans.find((p) => p.id === selectedId);
   add(selected || result.best);
@@ -273,9 +273,7 @@ const initialHlBuffer = () =>
 function renderPositions() {
   const initialExposure = portfolio.solana.sol - portfolio.hyperliquid.shortSol;
   const p = result.plans.find((p) => p.id === selectedId && p.feasible);
-  const currentBuffer =
-    portfolio.hyperliquid.collateral -
-    portfolio.hyperliquid.shortSol * portfolio.hyperliquid.markPrice * portfolio.hyperliquid.conservativeMarginRate;
+  const currentBuffer = initialHlBuffer();
   const positionCards = [
     {
       name: 'Solana · SOL spot',
@@ -1023,3 +1021,4 @@ renderGuide();
 renderSource();
 checkAiStatus();
 applyDeepLink();
+window.addEventListener('hashchange', applyDeepLink);

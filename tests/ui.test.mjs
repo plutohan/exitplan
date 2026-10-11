@@ -831,3 +831,24 @@ test('the plan link carries every constraint and a link restores them', async t 
   assert.equal(restored.get('#preserve-sol').checked, true);
   assert.ok(restored.get('.evidence-badge').textContent.startsWith('IMPORTED'));
 });
+
+test('a deep link pasted into an already open tab is applied on hashchange', async t => {
+  const ui = await mount(t, { externalResponse: external() });
+  assert.equal(ui.get('.evidence-badge').textContent, 'SCENARIO');
+  globalThis.location.hash = `#sol=${WALLET}&hl=${HL_ADDRESS}&target=900`;
+  ui.window.dispatchEvent(new ui.window.Event('hashchange'));
+  await flush(); await flush();
+  assert.equal(ui.get('#target').value, '900');
+  assert.ok(ui.get('.evidence-badge').textContent.startsWith('IMPORTED'));
+});
+
+test('displayed route cards never repeat the same outcome, and untouched HL buffers show no rounding drift', async t => {
+  const ui = await mount(t, { externalResponse: external() });
+  await importPositions(ui);
+  await ui.input('#target', 2000);
+  const cards = [...ui.document.querySelectorAll('.plan-card')].map(card => card.querySelector('.plan-description').textContent + '|' + card.querySelector('.plan-cash').textContent);
+  assert.equal(new Set(cards).size, cards.length, 'route cards must differ in outcome: ' + cards.join(' || '));
+  assert.equal(ui.get('.plan-card.selected').dataset.plan.startsWith('hybrid-lending') || ui.get('.plan-card.selected').dataset.plan === 'withdraw-lending', true);
+  const buffer = [...ui.document.querySelectorAll('.position-card')].find(card => /margin buffer/.test(card.textContent));
+  assert.equal(buffer.querySelector('.position-before').textContent, buffer.querySelector('.position-after').textContent.replace(/[A-Z]+$/, ''));
+});
