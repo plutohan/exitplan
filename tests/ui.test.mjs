@@ -701,7 +701,7 @@ test('an empty or wrong Hyperliquid address is flagged instead of importing sile
   assert.match(ui.get('#hl-address').getAttribute('placeholder'), /Phantom/);
 });
 
-test('importing an account under the margin floor lowers the floor to half the current buffer', async t => {
+test('importing an account under the margin floor never changes the floor; it explains and keeps Solana routes', async t => {
   const hl = structuredClone(hlShort);
   const sol = hl.assetPositions.find(a => a.position.coin === 'SOL').position;
   const locked = hl.assetPositions.filter(a => a.position.coin !== 'SOL').reduce((sum, a) => sum + Number(a.position.marginUsed), 0);
@@ -711,8 +711,8 @@ test('importing an account under the margin floor lowers the floor to half the c
   const ui = await mount(t, { externalResponse: external({ hl }) });
   await importPositions(ui);
   assert.match(ui.get('#import-status').textContent, /Loaded/);
-  assert.equal(Number(ui.get('#min-buffer').value), 400);
-  assert.match(ui.get('#import-status').textContent, /margin floor/i);
+  assert.equal(Number(ui.get('#min-buffer').value), 1500, 'the user\'s floor must not be mutated');
+  assert.match(ui.get('#import-status').textContent, /under your \$1,500 floor/);
   assert.ok(ui.document.querySelector('.plan-card.selected'), 'a Kamino-only route must stay selectable under the HL floor');
 });
 
@@ -878,4 +878,25 @@ test('imported rehearsal simulates the Kamino withdrawal through the server func
   assert.match(ui.get('#simulation-result').textContent, /withdrawV2/);
   assert.doesNotMatch(ui.get('#dialog-body').textContent, /withdrawal transaction is not built/);
   assertNoExecutionCalls(ui);
+});
+
+test('imported copy is honest about provenance, HL delivery and large sales', async t => {
+  const ui = await mount(t, { externalResponse: external() });
+  assert.match(ui.get('#load-example').textContent, /unrelated/);
+  await importPositions(ui);
+  await ui.input('#target', 2000);
+  const rejected = ui.get('.plan-card.rejected');
+  await ui.click(rejected);
+  assert.doesNotMatch(ui.get('#dialog-body').textContent, /synthetic portfolio/);
+  assert.match(ui.get('#dialog-body').textContent, /imported snapshot/);
+  await ui.click('#close-dialog');
+  await ui.click('#open-evidence');
+  const evidence = ui.get('#dialog-body').textContent;
+  assert.doesNotMatch(evidence, /Not supported: wallet connection/);
+  assert.match(evidence, /not a CCTP quote/);
+  assert.match(evidence, /priced from a 1 SOL Jupiter quote/);
+  await ui.click('#close-dialog');
+  const hlCard = [...ui.document.querySelectorAll('.plan-card')].find(card => /Withdraw free HL collateral/.test(card.textContent));
+  assert.ok(hlCard, 'an HL transfer route is displayed at $2,000');
+  assert.match(hlCard.textContent, /delivery fee not verified/);
 });

@@ -57,8 +57,11 @@ export async function importSolana(address, { fetchImpl = globalThis.fetch, now 
   let usdc = 0;
   let debt = 0;
   const reports = [];
+  const ignored = [];
   for (const [index, obligation] of obligations.entries()) {
     record(obligation, `obligation[${index}]`);
+    const isVanilla = obligation.obligationTag === 0 || obligation.humanTag === 'Vanilla';
+    if (!isVanilla) { ignored.push(String(obligation.humanTag ?? obligation.obligationTag ?? 'unknown')); continue; }
     const state = record(obligation.state, `obligation[${index}].state`);
     const stats = record(obligation.refreshedStats, `obligation[${index}].refreshedStats`);
     if (!Array.isArray(state.deposits) || !Array.isArray(state.borrows)) throw new AdapterError('INVALID_RESPONSE', `obligation[${index}] is missing its deposit or borrow lists`);
@@ -100,7 +103,8 @@ export async function importSolana(address, { fetchImpl = globalThis.fetch, now 
     assumptions: [
       `Withdraw capacity is capped by the USDC reserve liquidity at load ($${liquidity.toLocaleString('en-US', { maximumFractionDigits: 0 })} available)`,
       'Borrow capacity is 30% of SOL value, a model rule, not a Kamino quote',
-      'SOL price is the Jupiter output for 1 SOL; larger sales are priced by the fee rule, not re-quoted',
+      'Sales are priced from a 1 SOL Jupiter quote plus the fee rule; the rehearsal re-quotes the exact amount',
+      ...(ignored.length ? [`${ignored.length} other obligation${ignored.length === 1 ? '' : 's'} (${ignored.join(', ')}) ignored: only the vanilla obligation is modelled and rehearsed`] : []),
     ],
   };
 }

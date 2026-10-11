@@ -126,3 +126,19 @@ test('withdraw capacity is capped by the USDC reserve liquidity and fails closed
   await assert.rejects(importSolana(WALLET, { fetchImpl: fetchFor({ ...data, metrics: [] }) }), e => e.code === 'INVALID_RESPONSE');
   await assert.rejects(importSolana(WALLET, { fetchImpl: fetchFor({ ...data, metrics: [{ reserve: USDC_RESERVE, totalSupply: 'x', totalBorrow: '1' }] }) }), e => e.code === 'INVALID_RESPONSE');
 });
+
+test('only the vanilla obligation is modelled; other obligations are ignored and disclosed', async () => {
+  const data = await loaded();
+  const extra = structuredClone(data.obligations[0]);
+  extra.obligationAddress = 'OtherObligation1111111111111111111111111111';
+  extra.humanTag = 'Multiply'; extra.obligationTag = 1;
+  extra.refreshedStats.userTotalDeposit = '5000';
+  data.obligations.push(extra);
+  const result = await importSolana(WALLET, { fetchImpl: fetchFor(data) });
+  assert.equal(result.state.lending.usdc, 9607.36, 'the non-vanilla obligation must not be counted');
+  assert.ok(result.assumptions.some(line => /1 other obligation/.test(line)), result.assumptions.join(' | '));
+  const onlyOther = await loaded();
+  onlyOther.obligations[0].obligationTag = 1; onlyOther.obligations[0].humanTag = 'Multiply';
+  const none = await importSolana(WALLET, { fetchImpl: fetchFor(onlyOther) });
+  assert.equal(none.state.lending.usdc, 0);
+});
