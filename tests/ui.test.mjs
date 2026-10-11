@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { parseHTML } from 'linkedom';
-import { createDemoPortfolio, defaultConstraints, planExit } from '../web/engine.mjs';
+import { createDemoPortfolio, defaultConstraints, planExit, requiredMarginCents } from '../web/engine.mjs';
 
 // Behavioral DOM integration tests, not browser or visual QA. The actual app
 // module runs against its real HTML; network and elapsed time stay in-process.
@@ -17,15 +17,16 @@ const deferred = () => {
 const json = (body, status = 200) => Response.json(body, { status });
 const loadFixture = async name => JSON.parse(await readFile(new URL(`./fixtures/${name}.json`, import.meta.url), 'utf8'));
 const hlShort = await loadFixture('hl-sol-short');
+const hlNoPosition = await loadFixture('hl-no-position');
 const kaminoFixture = await loadFixture('kamino-obligations');
 const jupiterFixture = await loadFixture('jupiter-quote');
 const WALLET = 'DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK';
 const HL_ADDRESS = '0x3de9a354243a94e10060a198c7179b8e5393b9a1';
 const EXTERNAL_HOSTS = ['api.hyperliquid.xyz', 'solana-rpc.publicnode.com', 'api.kamino.finance', 'lite-api.jup.ag'];
-const external = ({ hl = hlShort, kamino = kaminoFixture, jupiter = jupiterFixture, lamports = 3_219_600_000, fail = null } = {}) => async call => {
+const external = ({ hl = hlShort, kamino = kaminoFixture, jupiter = jupiterFixture, lamports = 3_219_600_000, fail = null, mode = 'disabled' } = {}) => async call => {
   const target = new URL(call.url);
   if (fail && target.host === fail) return new Response('down', { status: 500 });
-  if (target.host === 'api.hyperliquid.xyz') return json(JSON.parse(call.body).type === 'allMids' ? { SOL: '109.695' } : hl);
+  if (target.host === 'api.hyperliquid.xyz') { const type = JSON.parse(call.body).type; return json(type === 'allMids' ? { SOL: '109.695' } : type === 'userAbstraction' ? mode : hl); }
   if (target.host === 'solana-rpc.publicnode.com') return json({ jsonrpc: '2.0', id: 1, result: { context: { slot: 1 }, value: lamports } });
   if (target.host === 'api.kamino.finance') return json(kamino);
   if (target.host === 'lite-api.jup.ag') return json(jupiter);
@@ -512,7 +513,7 @@ test('import by address loads both venues, labels plans IMPORTED and uses the qu
   assert.match(ui.get('.demo-label').textContent, /Imported/);
   assert.match(ui.get('.demo-label').textContent, /No real transactions/);
   assert.equal(ui.get('#load-positions').disabled, false);
-  assert.equal(ui.calls.filter(call => EXTERNAL_HOSTS.includes(call.host)).length, 5);
+  assert.equal(ui.calls.filter(call => EXTERNAL_HOSTS.includes(call.host)).length, 6); // balance, Kamino, quote, clearinghouse, mids, account mode
   assertNoExecutionCalls(ui);
 });
 
@@ -673,4 +674,48 @@ test('exposure caption compares the route with the imported starting exposure', 
   await importPositions(ui);
   assert.match(ui.get('#portfolio-caption').textContent, /unchanged/);
   assert.doesNotMatch(ui.get('#portfolio-caption').textContent, /exposure to price moves changes/);
+});
+
+test('a portfolio-margin Hyperliquid account is rejected with the reason and the scenario stays', async t => {
+  const ui = await mount(t, { externalResponse: external({ mode: 'portfolioMargin' }) });
+  await importPositions(ui);
+  assert.match(ui.get('#import-status').textContent, /Could not load positions: .*portfolioMargin/);
+  assert.equal(ui.get('.evidence-badge').textContent, 'SCENARIO');
+});
+
+test('an empty or wrong Hyperliquid address is flagged instead of importing silently as zeros', async t => {
+  const hl = structuredClone(hlNoPosition);
+  hl.marginSummary.accountValue = '0'; hl.withdrawable = '0';
+  const ui = await mount(t, { externalResponse: external({ hl }) });
+  await importPositions(ui);
+  assert.match(ui.get('#import-status').textContent, /no SOL position and no equity/);
+  assert.match(ui.get('#import-status').textContent, /Phantom/);
+  assert.match(ui.get('#hl-address').getAttribute('placeholder'), /Phantom/);
+});
+
+test('importing an account under the margin floor lowers the floor to half the current buffer', async t => {
+  const hl = structuredClone(hlShort);
+  const sol = hl.assetPositions.find(a => a.position.coin === 'SOL').position;
+  const locked = hl.assetPositions.filter(a => a.position.coin !== 'SOL').reduce((sum, a) => sum + Number(a.position.marginUsed), 0);
+  const reserve = requiredMarginCents(-Number(sol.szi), 109.7, 0.1) / 100;
+  hl.marginSummary.accountValue = String(locked + reserve + 800);
+  hl.withdrawable = '0';
+  const ui = await mount(t, { externalResponse: external({ hl }) });
+  await importPositions(ui);
+  assert.match(ui.get('#import-status').textContent, /Loaded/);
+  assert.equal(Number(ui.get('#min-buffer').value), 400);
+  assert.match(ui.get('#import-status').textContent, /margin floor/i);
+  assert.ok(ui.document.querySelector('.plan-card.selected'), 'a Kamino-only route must stay selectable under the HL floor');
+});
+
+test('imported copy never claims a 1:1 ratio, a synthetic walkthrough or an offsetting hedge that is not there', async t => {
+  const ui = await mount(t, { externalResponse: external() });
+  await importPositions(ui);
+  assert.match(ui.get('#position-cards').textContent, /Net short [\d,.]+ SOL overall/);
+  assert.match(ui.get('#import-status').textContent, /net exposure/);
+  await ui.click('#open-evidence');
+  const body = ui.get('#dialog-body').textContent;
+  assert.doesNotMatch(body, /1:1/);
+  assert.doesNotMatch(body, /walkthrough only/);
+  assert.match(body, /Starting net exposure/);
 });

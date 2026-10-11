@@ -11,6 +11,7 @@ const fetchFor = (state, options = {}) => async (url, init) => {
   assert.equal(url, 'https://api.hyperliquid.xyz/info');
   const body = JSON.parse(init.body);
   if (body.type === 'allMids') return Response.json(options.mids ?? mids);
+  if (body.type === 'userAbstraction') { assert.equal(body.user, ADDR); return Response.json(options.mode ?? 'disabled'); }
   if (body.type === 'clearinghouseState') { assert.equal(body.user, ADDR); return Response.json(state); }
   assert.fail('unexpected request ' + init.body);
 };
@@ -95,4 +96,18 @@ test('equity above the reserve but below locked margin still rejects with LEVERA
   const others = state.assetPositions.filter(a => a.position.coin !== 'SOL').reduce((sum, a) => sum + Number(a.position.marginUsed), 0);
   state.marginSummary.accountValue = String(others + 100); // positive collateral of $100, below the 10% reserve of a 700 SOL short
   await assert.rejects(importHyperliquid(ADDR, { fetchImpl: fetchFor(state) }), e => e.code === 'LEVERAGE_TOO_HIGH');
+});
+
+test('verifies the account mode on HyperCore: standard accepted, abstraction modes rejected', async () => {
+  const state = await fixture('hl-sol-short');
+  for (const mode of ['portfolioMargin', 'unifiedAccount', 'dexAbstraction', 'somethingNew', 42]) {
+    await assert.rejects(importHyperliquid(ADDR, { fetchImpl: fetchFor(state, { mode }) }), e => e instanceof AdapterError && e.code === 'UNSUPPORTED_ACCOUNT_MODE');
+  }
+  const standard = await importHyperliquid(ADDR, { fetchImpl: fetchFor(state, { mode: 'disabled' }) });
+  assert.equal(standard.reported.accountMode, 'disabled');
+  assert.ok(standard.assumptions.some(line => /verified on HyperCore/.test(line)), standard.assumptions.join(' | '));
+  assert.ok(standard.assumptions.every(line => !/does not verify/.test(line)));
+  const unset = await importHyperliquid(ADDR, { fetchImpl: fetchFor(state, { mode: 'default' }) });
+  assert.equal(unset.reported.accountMode, 'default');
+  assert.ok(unset.assumptions.some(line => /"default"/.test(line)));
 });

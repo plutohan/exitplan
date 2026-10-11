@@ -301,3 +301,15 @@ test('requiredMarginCents matches the engine reserve', () => {
   assert.equal(requiredMarginCents(0, 109.69, 0.1), 0);
   assert.equal(requiredMarginCents(1.234567, 109.69, 0.1), 1355);
 });
+
+test('routes that leave Hyperliquid untouched are not rejected by the HL floor when the account already sits below it', () => {
+  const p = createDemoPortfolio();
+  p.hyperliquid = { ...p.hyperliquid, collateral: 1100, freeWithdrawable: 100 }; // reserve 1,000 → buffer 100, under the 1,500 floor
+  const result = run({ target: 1000 }, p);
+  assert.deepEqual(result.errors, []);
+  assert.equal(route(result, 'withdraw-lending').feasible, true);
+  assert.equal(route(result, 'withdraw-hl').feasible, false);
+  assert.equal(result.maximumWithoutSelling, 2999.75);
+  assert.ok(result.best);
+  assert.ok(result.feasible.every(plan => plan.steps.every(step => !step.action.startsWith('Withdraw and transfer'))), 'nothing may be withdrawn from HL under the floor');
+});

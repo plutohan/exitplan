@@ -10,10 +10,15 @@ const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 export async function importHyperliquid(address, { fetchImpl = globalThis.fetch, now = Date.now, timeoutMs = 8000 } = {}) {
   if (typeof address !== 'string' || !ADDRESS.test(address)) throw new AdapterError('INVALID_ADDRESS', 'Enter a Hyperliquid address: 0x followed by 40 hex characters');
   const options = { method: 'POST', fetchImpl, timeoutMs };
-  const [state, mids] = await Promise.all([
+  const [state, mids, abstraction] = await Promise.all([
     requestJson(HL_INFO_URL, { ...options, body: { type: 'clearinghouseState', user: address } }),
     requestJson(HL_INFO_URL, { ...options, body: { type: 'allMids' } }),
+    requestJson(HL_INFO_URL, { ...options, body: { type: 'userAbstraction', user: address } }),
   ]);
+  const accountMode = typeof abstraction === 'string' ? abstraction : null;
+  if (accountMode !== 'disabled' && accountMode !== 'default') {
+    throw new AdapterError('UNSUPPORTED_ACCOUNT_MODE', `Hyperliquid account mode "${accountMode ?? 'unknown'}" is not supported; only standard accounts (abstraction disabled or default) are modelled`);
+  }
   record(state, 'clearinghouseState');
   record(mids, 'allMids');
   const summary = record(state.marginSummary, 'marginSummary');
@@ -56,7 +61,7 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
   const modelHeadroom = (collateralCents - required) / 100;
   const freeWithdrawable = Math.max(0, Math.min(round2(withdrawable), modelHeadroom));
   const assumptions = [
-    'Standard account assumed; the public API does not verify the account mode',
+    accountMode === 'disabled' ? 'Account mode verified on HyperCore: standard (abstraction disabled)' : 'Account mode reported as "default" on HyperCore (no abstraction chosen); treated as a standard account',
     'Reserve is 10% of short notional, a model assumption, not the exchange maintenance margin',
     'Margin used by other open positions is treated as locked and deducted from equity',
   ];
@@ -68,7 +73,7 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
     observedAt: new Date(now()).toISOString(),
     source: 'Hyperliquid public info API',
     state: { accountMode: 'standard', marginMode: 'cross', asset: 'SOL', shortSol, markPrice, collateral, conservativeMarginRate: HL_RESERVE_RATE, freeWithdrawable },
-    reported: { accountValue, withdrawable, marginUsed: decimal(summary.totalMarginUsed ?? 0, 'totalMarginUsed'), ...solReport, otherPositions },
+    reported: { accountMode, accountValue, withdrawable, marginUsed: decimal(summary.totalMarginUsed ?? 0, 'totalMarginUsed'), ...solReport, otherPositions },
     assumptions,
   };
 }

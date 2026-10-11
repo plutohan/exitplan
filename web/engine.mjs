@@ -125,6 +125,7 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
   const notional = (q, p = price) => mulFloor(q, p, UNITS);
   const requiredMargin = short => feeFor(mulCeil(short, mark, UNITS), marginBps);
   const originalRequired = requiredMargin(initialShort);
+  const initialBuffer = initialCollateral - originalRequired;
   const closeFee = q => feeFor(mulCeil(q, mark, UNITS), f.hlCloseBps);
   const hlCapacity = closed => Math.max(0, Math.min(
     initialCollateral - closeFee(closed) - requiredMargin(initialShort - closed) - minimumBuffer,
@@ -166,7 +167,8 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
     if (a.borrowed > cents(c.maxNewDebt)) rejections.push(`New debt of $${dollars(a.borrowed).toFixed(2)} exceeds the $${c.maxNewDebt.toFixed(2)} debt limit.`);
     if (c.preserveSolQuantity && a.sold) rejections.push('Selling SOL violates the preserve-SOL-quantity constraint.');
     if (c.preserveHedge && a.sold !== a.closed) rejections.push('SOL sale and short reduction are mismatched; starting net SOL exposure would change.');
-    if (hlAfter - marginAfter < minimumBuffer) rejections.push(`Remaining HL scenario buffer of $${dollars(hlAfter - marginAfter).toFixed(2)} is below $${c.minHlBuffer.toFixed(2)}.`);
+    // The floor binds only when a route lowers the buffer; an account that already sits under it may still raise cash elsewhere.
+    if (hlAfter - marginAfter < minimumBuffer && hlAfter - marginAfter < initialBuffer) rejections.push(`Remaining HL scenario buffer of $${dollars(hlAfter - marginAfter).toFixed(2)} is below $${c.minHlBuffer.toFixed(2)}.`);
     if (estimatedHours > c.deadlineHours) rejections.push(`Fixture duration of ${estimatedHours} hours exceeds the ${c.deadlineHours}-hour deadline; this is not a delivery guarantee.`);
     if (a.lending > lendingCapacity) rejections.push('Lending withdrawal exceeds supplied capacity.');
     if (a.sold > initialSol || a.closed > initialShort) rejections.push('Trade exceeds the available position quantity.');
@@ -248,12 +250,10 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
 
   // Maximum retaining both position quantities and creating no debt, independent of target.
   // Respect the same minimum buffer and fixture deadline; maximize over source subsets.
-  if (initialCollateral - originalRequired >= minimumBuffer) {
-    for (const useLending of [false, true]) for (const useHl of [false, true]) {
-      const a = allocation({ lending: useLending ? lendingCapacity : 0, hl: useHl ? hlCapacity(0) : 0 });
-      const duration = (a.lending ? t.lendingWithdrawHours : 0) + (a.hl ? t.hlTransferHours : 0);
-      if (duration <= c.deadlineHours) result.maximumWithoutSelling = Math.max(result.maximumWithoutSelling, dollars(cash(a)));
-    }
+  for (const useLending of [false, true]) for (const useHl of [false, true]) {
+    const a = allocation({ lending: useLending ? lendingCapacity : 0, hl: useHl ? hlCapacity(0) : 0 });
+    const duration = (a.lending ? t.lendingWithdrawHours : 0) + (a.hl ? t.hlTransferHours : 0);
+    if (duration <= c.deadlineHours) result.maximumWithoutSelling = Math.max(result.maximumWithoutSelling, dollars(cash(a)));
   }
   result.feasible = result.plans.filter(plan => plan.feasible).sort((a, b) =>
     (a.id === 'no-action' ? -1 : b.id === 'no-action' ? 1 : 0)

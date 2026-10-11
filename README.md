@@ -8,9 +8,9 @@ ExitPlan takes a **cash goal plus the limits you refuse to break** (new-debt cap
 
 ## What is real in this build
 
-- **Real positions by address.** Enter a Solana wallet and a Hyperliquid address. The browser reads them read-only from public APIs: SOL balance (publicnode RPC), Kamino main-market USDC deposits and borrows (Kamino API), the SOL short, equity, withdrawable and other positions on Hyperliquid (public info API), and a live Jupiter quote for SOL → USDC.
+- **Real positions by address.** Enter a Solana wallet and a Hyperliquid address. The browser reads them read-only from public APIs: SOL balance (publicnode RPC), Kamino main-market USDC deposits and borrows (Kamino API), the SOL short, equity, withdrawable and other positions on Hyperliquid (public info API), the HyperCore account mode (`userAbstraction`), and a live Jupiter quote for SOL → USDC.
 - **Real transaction simulation.** In the rehearsal, the Solana sell leg builds an unsigned Jupiter swap for the entered wallet and runs Solana `simulateTransaction` (signature verification off, fresh blockhash). You see success or the exact error, compute units and the quoted output. The transaction is never sent.
-- **Deterministic route engine** with integer-cent arithmetic, fail-closed validation and 142 automated tests, including a 650-plan conservation grid.
+- **Deterministic route engine** with integer-cent arithmetic, fail-closed validation and 159 automated tests, including a 650-plan conservation grid.
 - **AI intent with confirmation.** Describe the goal in your own words; a server function turns it into a constraint proposal (OpenAI structured output, validated against a schema), and nothing applies until you confirm.
 - **Public Hyperliquid market reference** (SOL perp mid) shown next to the planning price, never silently substituted.
 
@@ -19,9 +19,11 @@ ExitPlan takes a **cash goal plus the limits you refuse to break** (new-debt cap
 - No execution. No wallet connection, signing, sending, bridging, borrowing or trading.
 - Hyperliquid order and withdrawal steps and the Kamino withdrawal step are listed but not simulated (they need signed exchange requests or a withdrawal transaction builder).
 - Fees other than the Jupiter-quoted sale, the 10% margin reserve, durations and borrowing terms are model assumptions and are labelled as such in the app.
-- The Hyperliquid account is assumed to be a standard account; the public API does not verify account mode. Margin used by other open positions is treated as locked.
+- The Hyperliquid account mode is verified on HyperCore: standard accounts (abstraction `disabled` or `default`) are accepted; unified-account, portfolio-margin and DEX-abstraction accounts are rejected with the reason, because their perp state is not meaningful on its own. Margin used by other open positions is treated as locked.
 - Only Kamino obligations that hold USDC alone are supported; mixed-asset obligations and any existing borrow are rejected with a reason.
-- Ranking means lowest upfront fees among the evaluated candidates, not a global optimum or financial advice.
+- The 10% margin reserve mirrors Hyperliquid's 10%-of-notional withdrawal floor, not its maintenance margin; the liquidation price is read from the exchange but not re-modelled after a route.
+- The minimum margin buffer only blocks routes that lower the Hyperliquid buffer; an account that already sits under the floor can still raise cash on Solana. On import, a floor above the current buffer is lowered to half the buffer and the app says so.
+- Ranking means lowest upfront fees among a bounded set of evaluated candidates (dozens, not all), not a global optimum or financial advice.
 
 ## Try it
 
@@ -35,7 +37,7 @@ Requires Node.js 20+. The only dependency is LinkeDOM for DOM tests.
 
 ```sh
 npm ci --ignore-scripts
-npm test                       # 142 tests: engine, adapters, server, UI
+npm test                       # 159 tests: engine, adapters, server, UI
 npx vercel dev                 # serves web/ and the api/ functions
 ```
 
@@ -57,7 +59,7 @@ Every adapter fails closed with a reason code; the UI never substitutes cached o
 
 ## Disclosure
 
-All code was written on 2026-10-11, with review fixes on 2026-10-12, inside the hackathon window, by a solo builder with AI coding assistance. The synthetic engine and UI (first commit) were built on the morning of 2026-10-11; the real-data adapters, Vercel deployment and English copy followed the same day. No code predates the window. Public addresses used in the demo belong to other people; they are read-only examples and are not ours.
+All commits are dated 2026-10-11 (UTC+4), inside the hackathon window, by a solo builder working with AI coding assistants. The synthetic engine and UI were generated that morning with OpenAI's app tooling and imported as the first commit, which is why the history starts from a complete snapshot; the real-data adapters, Vercel deployment, English copy and three independent reviews (one Claude, one Codex, one Claude Opus) followed the same day. No code predates the window. Public addresses listed in `docs/demo-addresses.md` belong to other people; they are read-only examples and are not ours.
 
 ## Documents
 
