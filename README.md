@@ -8,6 +8,10 @@ Phantom put Hyperliquid perps one tap away from Solana spot, so a common positio
 
 You give ExitPlan a **cash goal plus the limits you refuse to break** (new-debt cap, keep net SOL exposure, keep-SOL-quantity, minimum margin buffer). It reads both chains by address, evaluates dozens of routes, shows every route that fits and every route that does not, with the reason, and rehearses the chosen route with real `simulateTransaction` runs for the Solana legs. Nothing is signed or sent. Standard and Unified Hyperliquid accounts are supported; portfolio margin is not modelled.
 
+![Pre-flight readout on a live standard account: account mode verified, net exposure, liquidation distance, margin buffer against the floor next to the exchange's withdrawable, Kamino pool cash, wallet USDC, carry](docs/images/preflight-readout.png)
+
+<p align="center"><img src="docs/images/rehearsal-hyperliquid.png" width="49%" alt="Rehearsal, Hyperliquid step: the live order book walked for a 1.5 SOL buy-back, taker fee, cost against the plan, book age, and the unsigned reduce-only IOC order"> <img src="docs/images/rehearsal-solana.png" width="49%" alt="Rehearsal, Solana step: the Jupiter swap simulated with simulateTransaction, quoted USDC against the plan estimate, and a Solana Explorer inspector link for the unsigned transaction"></p>
+
 ## What is real in this build
 
 - **Real positions by address, Phantom connect, or a deep link.** Enter a Solana wallet and a Hyperliquid address, press *Connect wallet (read-only)* (Phantom, OKX or any injected wallet: it reads the Solana address and the EVM address used on Hyperliquid, never signs), open a `#sol=…&hl=…&target=…` link, or press *Load public example*. The browser reads them read-only from public APIs: SOL balance (publicnode RPC), Kamino main-market USDC deposits and borrows (Kamino API), the SOL short, equity, withdrawable and other positions on Hyperliquid (public info API), the HyperCore account mode (`userAbstraction`), USDC already sitting in the wallet (Jupiter balances, used first at zero fee), and a live Jupiter quote for SOL → USDC.
