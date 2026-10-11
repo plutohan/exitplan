@@ -838,7 +838,41 @@ function renderSource() {
     ? `Planning uses the Jupiter quote SOL ${money(portfolio.solana.solPrice, true)}`
     : 'Planning assumes SOL $100';
   $('.guide').toggleAttribute('hidden', isImported);
+  renderPreflight();
   $('#share-link').disabled = !imported;
+}
+function renderPreflight() {
+  const panel = $('#preflight');
+  if (portfolio.evidence !== 'imported' || !imported) {
+    panel.toggleAttribute('hidden', true);
+    return;
+  }
+  const hl = imported.hyperliquid, so = imported.solana;
+  const items = [];
+  const push = (status, label, detail) => items.push({ status, label, detail });
+  if (hl.reported.accountMode === 'disabled') push('ok', 'Account mode', 'verified on HyperCore: standard (abstraction disabled)');
+  else push('warn', 'Account mode', 'reported as default on HyperCore; treated as standard, not proven');
+  const exposure = portfolio.solana.sol - portfolio.hyperliquid.shortSol;
+  if (Math.abs(exposure) < 0.000001) push('ok', 'Net exposure', '0 SOL: spot and short balanced');
+  else push('warn', 'Net exposure', `${num(exposure)} SOL: not neutral (spot ${num(portfolio.solana.sol)}, short ${num(portfolio.hyperliquid.shortSol)}); keep-net-exposure preserves this`);
+  if (portfolio.hyperliquid.shortSol > 0 && hl.reported.liquidationPrice) {
+    const distance = (hl.reported.liquidationPrice - portfolio.hyperliquid.markPrice) / portfolio.hyperliquid.markPrice;
+    push(distance >= 0.25 ? 'ok' : 'warn', 'Liquidation', `${money(hl.reported.liquidationPrice, true)} vs mark ${money(portfolio.hyperliquid.markPrice, true)} (+${(distance * 100).toFixed(0)}% away), SOL only`);
+  } else push('info', 'Liquidation', 'no SOL short, no liquidation price');
+  const buffer = initialHlBuffer();
+  if (buffer < constraints.minHlBuffer) push('warn', 'HL margin buffer', `${money(buffer, true)} is under your ${money(constraints.minHlBuffer)} floor: HL withdrawals blocked, Solana routes work`);
+  else push('ok', 'HL margin buffer', `${money(buffer, true)} above your ${money(constraints.minHlBuffer)} floor (exchange reported ${money(hl.reported.withdrawable, true)} withdrawable)`);
+  const liquidity = so.reported.reserveLiquidity, deposit = portfolio.solana.lending.usdc;
+  if (deposit <= 0) push('info', 'Kamino liquidity', 'no Kamino deposit to withdraw');
+  else if (liquidity >= deposit) push('ok', 'Kamino liquidity', `${money(liquidity)} available in the USDC reserve vs your ${money(deposit, true)} deposited`);
+  else push('warn', 'Kamino liquidity', `only ${money(liquidity)} withdrawable now vs your ${money(deposit, true)} deposited`);
+  const walletUsdc = portfolio.solana.wallet.usdc;
+  push(walletUsdc > 0 ? 'ok' : 'info', 'Wallet USDC', walletUsdc > 0 ? `${money(walletUsdc, true)} used first at zero fee` : 'none in the wallet');
+  if (hl.reported.otherPositions.length) push('info', 'Other Hyperliquid positions', `${hl.reported.otherPositions.map((p) => p.coin).join(', ')}: margin treated as locked`);
+  push('info', 'Not simulated', 'Hyperliquid order and withdrawal legs; HL → Solana CCTP delivery fee');
+  $('#preflight-items').innerHTML = items.map((i) => `<li class="${i.status}"><b>${esc(i.label)}</b> · ${esc(i.detail)}</li>`).join('');
+  $('#preflight-badge').textContent = evidenceLabel();
+  panel.toggleAttribute('hidden', false);
 }
 function setSource(mode) {
   sourceMode = mode;

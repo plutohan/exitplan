@@ -98,7 +98,7 @@ export async function importSolana(address, { fetchImpl = globalThis.fetch, now 
       borrow: { enabled: true, capacity: round2(sol * solPrice * BORROW_LTV), maxLtv: BORROW_LTV },
     },
     quote: { outUsdcPerSol: outAmount / 1e6, priceImpactPct: String(quote.priceImpactPct ?? '0'), solSaleBps: solSaleBpsFromQuote(quote) },
-    reported: { lamports, obligations: reports },
+    reported: { lamports, obligations: reports, reserveLiquidity: liquidity },
     sources: ['publicnode RPC getBalance', 'Kamino main-market obligations API', 'Kamino reserve metrics (USDC liquidity)', 'Jupiter quote for 1 SOL → USDC', 'Jupiter wallet token balances (USDC in the wallet)'],
     assumptions: [
       `Withdraw capacity is capped by the USDC reserve liquidity at load ($${liquidity.toLocaleString('en-US', { maximumFractionDigits: 0 })} available)`,

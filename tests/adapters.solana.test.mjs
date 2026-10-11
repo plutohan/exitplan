@@ -122,6 +122,7 @@ test('withdraw capacity is capped by the USDC reserve liquidity and fails closed
   const capped = await importSolana(WALLET, { fetchImpl: fetchFor({ ...data, metrics: [{ reserve: USDC_RESERVE, totalSupply: '100', totalBorrow: '40' }] }) });
   assert.equal(capped.state.lending.usdc, 9607.36);
   assert.equal(capped.state.lending.withdrawCapacity, 60);
+  assert.equal(capped.reported.reserveLiquidity, 60);
   assert.ok(capped.assumptions.some(line => /reserve liquidity/i.test(line)));
   await assert.rejects(importSolana(WALLET, { fetchImpl: fetchFor({ ...data, metrics: [] }) }), e => e.code === 'INVALID_RESPONSE');
   await assert.rejects(importSolana(WALLET, { fetchImpl: fetchFor({ ...data, metrics: [{ reserve: USDC_RESERVE, totalSupply: 'x', totalBorrow: '1' }] }) }), e => e.code === 'INVALID_RESPONSE');

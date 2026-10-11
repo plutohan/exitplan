@@ -925,3 +925,40 @@ test('a Kamino simulation that delivers less than the plan is flagged, and impor
   assert.match(ui.get('#simulation-result').textContent, /short of the plan/);
   assert.ok(ui.get('#simulation-result').classList.contains('error'));
 });
+
+test('the pre-flight readout appears only for imported positions and grades each check', async t => {
+  const ui = await mount(t, { externalResponse: external() });
+  assert.equal(ui.get('#preflight').hasAttribute('hidden'), true, 'hidden in the synthetic scenario');
+  await importPositions(ui);
+  assert.equal(ui.get('#preflight').hasAttribute('hidden'), false);
+  const items = [...ui.document.querySelectorAll('#preflight-items li')];
+  const text = key => items.find(li => new RegExp(key).test(li.textContent));
+  assert.ok(text('Account mode').classList.contains('ok'), 'standard account passes');
+  assert.match(text('Account mode').textContent, /standard/);
+  assert.ok(text('Net exposure').classList.contains('warn'), 'a net short of 88 SOL is flagged, not hidden');
+  assert.match(text('Net exposure').textContent, /-88\.1 SOL/);
+  assert.match(text('Liquidation').textContent, /\$267/);
+  assert.match(text('Kamino liquidity').textContent, /\$8,075,224/);
+  assert.ok(text('Kamino liquidity').classList.contains('ok'));
+  assert.match(text('Wallet USDC').textContent, /\$336\.40/);
+  assert.match(text('Not simulated').textContent, /Hyperliquid/);
+  await ui.input('#source-scenario', true, 'change');
+  assert.equal(ui.get('#preflight').hasAttribute('hidden'), true);
+});
+
+test('the pre-flight readout warns when the HL buffer is under the floor and when the account mode is only reported as default', async t => {
+  const hl = structuredClone(hlShort);
+  const sol = hl.assetPositions.find(a => a.position.coin === 'SOL').position;
+  const locked = hl.assetPositions.filter(a => a.position.coin !== 'SOL').reduce((sum, a) => sum + Number(a.position.marginUsed), 0);
+  const reserve = requiredMarginCents(-Number(sol.szi), Math.round((Number(sol.positionValue) / Math.abs(Number(sol.szi))) * 100) / 100, 0.1) / 100;
+  hl.marginSummary.accountValue = String(locked + reserve + 800);
+  hl.withdrawable = '0';
+  const ui = await mount(t, { externalResponse: external({ hl, mode: 'default' }) });
+  await importPositions(ui);
+  const items = [...ui.document.querySelectorAll('#preflight-items li')];
+  const text = key => items.find(li => new RegExp(key).test(li.textContent));
+  assert.ok(text('HL margin buffer').classList.contains('warn'));
+  assert.match(text('HL margin buffer').textContent, /under your \$1,500 floor/);
+  assert.ok(text('Account mode').classList.contains('warn'), 'default mode is a warning, not a pass');
+  assert.match(text('Account mode').textContent, /default/);
+});
