@@ -48,9 +48,12 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
   if (spotUsdc.hold > spotUsdc.total + 1e-6) throw new AdapterError('INVALID_RESPONSE', `Spot USDC hold ($${spotUsdc.hold.toFixed(2)}) exceeds the total ($${spotUsdc.total.toFixed(2)}); the balances do not fit the model`);
   // A "default" abstraction setting is not a verified mode: establish it from the balances. In the unified layout the spot
   // total contains the perps equity and the hold equals perps equity minus perps withdrawable; a standard account keeps them apart.
-  const layoutUnified = Boolean(usdcEntry) && perpsAccountValue > 0 && Math.abs(spotUsdc.hold - Math.max(0, perpsAccountValue - perpsWithdrawable)) <= Math.max(1, spotUsdc.total * 0.0001) && spotUsdc.total >= perpsAccountValue - 1;
+  const perpsHeld = Math.max(0, perpsAccountValue - perpsWithdrawable); // margin actually in use; without it the two layouts cannot be told apart
+  const holdMatches = Math.abs(spotUsdc.hold - perpsHeld) <= Math.max(1, spotUsdc.total * 0.0001);
+  const layoutUnified = Boolean(usdcEntry) && perpsHeld > 1 && holdMatches && spotUsdc.total >= perpsAccountValue - 1;
+  const layoutStandard = perpsAccountValue > 0 && (!usdcEntry || spotUsdc.total < perpsAccountValue - 1 || (perpsHeld > 1 && !holdMatches));
   const effectiveMode = declaredMode ?? (layoutUnified ? 'unified' : 'standard');
-  const modeEvidence = declaredMode ? 'verified' : layoutUnified || perpsAccountValue > 0 ? 'inferred' : 'unknown';
+  const modeEvidence = declaredMode ? 'verified' : layoutUnified || layoutStandard ? 'inferred' : 'unknown';
   unified = effectiveMode === 'unified';
   if (unified && (!spot || typeof spot !== 'object' || !Array.isArray(spot.balances))) throw new AdapterError('INVALID_RESPONSE', 'Unified account: the spot clearinghouse state is missing or malformed');
   if (unified && !usdcEntry && (perpsAccountValue !== 0 || (Array.isArray(state.assetPositions) && state.assetPositions.length > 0))) throw new AdapterError('INVALID_RESPONSE', 'Unified account: the spot USDC entry is missing although the account has positions or equity');

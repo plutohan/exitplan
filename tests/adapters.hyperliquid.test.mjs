@@ -354,4 +354,10 @@ test('a "default" account mode is established from the balances: unified layout,
   assert.ok(unknown.assumptions.some(l => /could not be established/.test(l)), unknown.assumptions.join(' | '));
   const explicit = await importHyperliquid(ADDR, { fetchImpl: fetchFor(await fixture('hl-sol-short')) });
   assert.deepEqual([explicit.reported.effectiveMode, explicit.reported.modeEvidence], ['standard', 'verified']);
+  // Equity but no margin in use (no positions) and a spot balance at least as large: both layouts fit, so nothing is claimed.
+  const idle = structuredClone(await fixture('hl-no-position')); idle.marginSummary.accountValue = '500'; idle.withdrawable = '500';
+  const ambiguous = await importHyperliquid(ADDR, { fetchImpl: fetchFor(idle, { mode: 'default', spot: { balances: [{ coin: 'USDC', token: 0, total: '600', hold: '0', entryNtl: '0' }] } }) });
+  assert.deepEqual([ambiguous.reported.effectiveMode, ambiguous.reported.modeEvidence], ['standard', 'unknown']);
+  const apart = await importHyperliquid(ADDR, { fetchImpl: fetchFor(idle, { mode: 'default', spot: { balances: [{ coin: 'USDC', token: 0, total: '10', hold: '0', entryNtl: '0' }] } }) });
+  assert.deepEqual([apart.reported.effectiveMode, apart.reported.modeEvidence], ['standard', 'inferred'], 'perps equity larger than spot can only be the standard layout');
 });
