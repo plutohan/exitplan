@@ -420,6 +420,7 @@ function recalculate({ sync = true } = {}) {
   renderPlans();
   renderPositions();
   renderDecision();
+  renderPreflight();
 }
 let toastTimer;
 function toast(message) {
@@ -852,6 +853,7 @@ function renderPreflight() {
   const items = [];
   const push = (status, label, detail) => items.push({ status, label, detail });
   if (hl.reported.accountMode === 'disabled') push('ok', 'Account mode', 'verified on HyperCore: standard (abstraction disabled)');
+  else if (hl.reported.accountMode === 'unifiedAccount' && hl.reported.crossCheck && !hl.reported.crossCheck.ok) push('warn', 'Account mode', `unified account verified, but the cross-check failed: spot USDC total minus maintenance ${money(hl.reported.crossCheck.implied, true)} vs exchange available ${money(hl.reported.crossCheck.available, true)}; positions on other perp DEXs (HIP-3) are not modelled`);
   else if (hl.reported.accountMode === 'unifiedAccount') push('ok', 'Account mode', `verified on HyperCore: unified account (spot USDC ${money(hl.reported.spotUsdc.total, true)} is the equity, ${money(hl.reported.spotUsdc.hold, true)} held as margin)`);
   else push('warn', 'Account mode', 'reported as default on HyperCore; treated as standard, not proven');
   const exposure = portfolio.solana.sol - portfolio.hyperliquid.shortSol;
@@ -863,8 +865,9 @@ function renderPreflight() {
     else push(distance >= 0.25 ? 'ok' : 'warn', 'Liquidation', `${money(hl.reported.liquidationPrice, true)} vs mark ${money(portfolio.hyperliquid.markPrice, true)} (${(distance * 100).toFixed(0)}% above mark), cross-margin price from the exchange; assumes other positions' prices hold`);
   } else push('info', 'Liquidation', 'no SOL short, no liquidation price');
   const buffer = initialHlBuffer();
-  if (buffer < constraints.minHlBuffer) push('warn', 'HL margin buffer', `model buffer ${money(buffer, true)} (10% reserve) is under your ${money(constraints.minHlBuffer)} floor: HL withdrawals only after reducing the short; Solana routes work`);
-  else push('ok', 'HL margin buffer', `model buffer ${money(buffer, true)} (10% reserve) above your ${money(constraints.minHlBuffer)} floor; exchange reported ${money(hl.reported.withdrawable, true)} withdrawable`);
+  const reserveLabel = `${(portfolio.hyperliquid.conservativeMarginRate * 100).toFixed(portfolio.hyperliquid.conservativeMarginRate * 100 % 1 ? 2 : 0)}% reserve`;
+  if (buffer < constraints.minHlBuffer) push('warn', 'HL margin buffer', `model buffer ${money(buffer, true)} (${reserveLabel}) is under your ${money(constraints.minHlBuffer)} floor: HL withdrawals only after reducing the short; non-HL routes are evaluated separately`);
+  else push('ok', 'HL margin buffer', `model buffer ${money(buffer, true)} (${reserveLabel}) above your ${money(constraints.minHlBuffer)} floor; exchange reported ${money(hl.reported.withdrawable, true)} withdrawable`);
   const liquidity = so.reported.reserveLiquidity, deposit = portfolio.solana.lending.usdc;
   if (deposit <= 0) push('info', 'Kamino liquidity', 'no Kamino deposit to withdraw');
   else if (liquidity >= deposit) push('ok', 'Kamino liquidity', `${money(liquidity, true)} pool cash in the USDC reserve (before withdrawal caps) vs your ${money(deposit, true)} deposited`);

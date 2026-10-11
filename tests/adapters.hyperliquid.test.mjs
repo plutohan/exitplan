@@ -146,8 +146,8 @@ test('a unified account imports with the spot USDC total as equity and total min
   assert.equal(result.state.accountMode, 'unified');
   const usdc = spot.balances.find(b => b.coin === 'USDC');
   const total = Number(usdc.total), hold = Number(usdc.hold);
-  const residualHold = Math.max(0, hold - (Number(perps.marginSummary.accountValue) - Number(perps.withdrawable)));
-  assert.ok(residualHold < 0.01, 'fixture: hold equals perps equity minus perps withdrawable');
+  const residualHold = 0;
+  assert.ok(Math.abs(hold - (Number(perps.marginSummary.accountValue) - Number(perps.withdrawable))) < 0.01, 'fixture: hold equals perps equity minus perps withdrawable');
   const locked = perps.assetPositions.filter(a => a.position.coin !== 'SOL').reduce((sum, a) => sum + Math.round(Math.max(Number(a.position.marginUsed), 0.1 * Number(a.position.positionValue)) * 100) / 100, 0);
   assert.equal(result.state.collateral, Math.round((total - residualHold - locked) * 100) / 100);
   assert.deepEqual(result.reported.otherPositions.map(p => p.lockedMargin), perps.assetPositions.filter(a => a.position.coin !== 'SOL').map(a => Math.round(Math.max(Number(a.position.marginUsed), 0.1 * Number(a.position.positionValue)) * 100) / 100));
@@ -157,25 +157,56 @@ test('a unified account imports with the spot USDC total as equity and total min
   assert.ok(result.assumptions.some(line => /Unified account/.test(line) && /spot USDC/.test(line)), result.assumptions.join(' | '));
   assert.deepEqual(result.reported.spotUsdc, { total, hold });
   const noUsdc = await importHyperliquid(ADDR, { fetchImpl: fetchFor(perps, { mode: 'unifiedAccount', spot: { balances: [] } }) }).catch(e => e);
-  assert.equal(noUsdc.code, 'LEVERAGE_TOO_HIGH', 'no spot USDC on a unified account means no equity for the short');
+  assert.equal(noUsdc.code, 'INVALID_RESPONSE', 'a unified account with positions must have a USDC spot entry');
 });
 
-test('a residual spot hold (open spot orders) is deducted from unified equity', async () => {
+test('a residual spot hold (open spot orders) lowers withdrawable but not unified equity', async () => {
   const perps = await fixture('hl-unified-perps');
   const spot = structuredClone(await fixture('hl-unified-spot'));
   const usdc = spot.balances.find(b => b.coin === 'USDC');
   usdc.hold = String(Number(usdc.hold) + 500);
   delete spot.tokenToAvailableAfterMaintenance;
   const result = await importHyperliquid(ADDR, { fetchImpl: fetchFor(perps, { mode: 'unifiedAccount', spot }) });
-  assert.equal(result.reported.accountValue, Math.round((Number(usdc.total) - 500) * 100) / 100);
+  assert.equal(result.reported.accountValue, Math.round(Number(usdc.total) * 100) / 100);
   assert.equal(result.reported.withdrawable, Math.round((Number(usdc.total) - Number(usdc.hold)) * 100) / 100);
 });
 
-test('a unified account whose maintenance figure contradicts the spot total fails closed', async () => {
+test('a unified account whose maintenance figure contradicts the spot total imports with a cross-check warning', async () => {
   const perps = await fixture('hl-unified-perps');
+  const good = await importHyperliquid(ADDR, { fetchImpl: fetchFor(perps, { mode: 'unifiedAccount', spot: await fixture('hl-unified-spot') }) });
+  assert.equal(good.reported.crossCheck.ok, true);
   const spot = structuredClone(await fixture('hl-unified-spot'));
   spot.tokenToAvailableAfterMaintenance = [[0, '50000']];
-  await assert.rejects(importHyperliquid(ADDR, { fetchImpl: fetchFor(perps, { mode: 'unifiedAccount', spot }) }), e => e.code === 'INVALID_RESPONSE' && /maintenance/.test(e.message));
+  const result = await importHyperliquid(ADDR, { fetchImpl: fetchFor(perps, { mode: 'unifiedAccount', spot }) });
+  assert.equal(result.reported.crossCheck.ok, false);
+  assert.equal(result.reported.crossCheck.available, 50000);
+  assert.ok(result.assumptions.some(line => /other perp DEXs/.test(line) && /not modelled/.test(line)), result.assumptions.join(' | '));
+});
+
+test('a unified account fails closed on a missing or malformed spot state, but an empty account may lack a USDC entry', async () => {
+  const perps = await fixture('hl-unified-perps');
+  for (const spot of [undefined, {}, { balances: 'nope' }, { balances: [{ coin: 'USDC', token: 0, total: '-1', hold: '0' }] }, { balances: [] }]) {
+    await assert.rejects(importHyperliquid(ADDR, { fetchImpl: fetchFor(perps, { mode: 'unifiedAccount', spot }) }), e => e.code === 'INVALID_RESPONSE' && /spot/i.test(e.message), JSON.stringify(spot));
+  }
+  const empty = structuredClone(await fixture('hl-no-position'));
+  empty.marginSummary.accountValue = '0.0'; empty.withdrawable = '0.0';
+  const result = await importHyperliquid(ADDR, { fetchImpl: fetchFor(empty, { mode: 'unifiedAccount', spot: { balances: [] } }) });
+  assert.equal(result.state.collateral, 0);
+  assert.equal(result.state.shortSol, 0);
+});
+
+test('a SOL short below 10x leverage reserves its initial margin rate instead of the 10% floor', async () => {
+  const state = structuredClone(await fixture('hl-sol-short'));
+  const sol = solPosition(state).position;
+  sol.leverage.value = 5;
+  sol.marginUsed = String(Number(sol.positionValue) / 5);
+  const result = await importHyperliquid(ADDR, { fetchImpl: fetchFor(state) });
+  assert.equal(result.state.conservativeMarginRate, 0.2);
+  const twenty = await importHyperliquid(ADDR, { fetchImpl: fetchFor(await fixture('hl-sol-short')) });
+  assert.equal(twenty.state.conservativeMarginRate, 0.1);
+  sol.leverage.value = 3;
+  const three = await importHyperliquid(ADDR, { fetchImpl: fetchFor(state) });
+  assert.equal(three.state.conservativeMarginRate, 0.3334);
 });
 
 test('other stable collateral and SOL held on HyperCore spot are reported, not silently dropped', async () => {

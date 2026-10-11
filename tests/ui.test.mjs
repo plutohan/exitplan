@@ -965,6 +965,7 @@ test('the pre-flight readout warns when the HL buffer is under the floor and whe
   const text = key => items.find(li => new RegExp(key).test(li.textContent));
   assert.ok(text('HL margin buffer').classList.contains('warn'));
   assert.match(text('HL margin buffer').textContent, /under your \$1,500 floor/);
+  assert.match(text('HL margin buffer').textContent, /non-HL routes are evaluated separately/);
   assert.ok(text('Account mode').classList.contains('warn'), 'default mode is a warning, not a pass');
   assert.match(text('Account mode').textContent, /default/);
 });
@@ -1014,4 +1015,36 @@ test('plan cards show the yearly carry each route gives up, in the scenario and 
   assert.match(carry.textContent, /funding/);
   assert.match(carry.textContent, /4\.68% APY/);
   assert.match(carry.textContent, /7-day average/);
+});
+
+test('the pre-flight readout follows constraint edits instead of going stale', async t => {
+  const ui = await mount(t, { externalResponse: external() });
+  await importPositions(ui);
+  const item = () => [...ui.document.querySelectorAll('#preflight-items li')].find(li => /HL margin buffer/.test(li.textContent));
+  assert.ok(item().classList.contains('ok'));
+  await ui.input('#min-buffer', 100000);
+  assert.ok(item().classList.contains('warn'), 'raising the floor above the buffer flips the item');
+  assert.match(item().textContent, /under your \$100,000 floor/);
+  await ui.input('#min-buffer', 1500);
+  assert.ok(item().classList.contains('ok'));
+});
+
+test('a failed unified cross-check marks the account-mode item as a warning', async t => {
+  const spot = structuredClone(hlUnifiedSpot);
+  spot.tokenToAvailableAfterMaintenance = [[0, '50000']];
+  const ui = await mount(t, { externalResponse: external({ hl: hlUnifiedPerps, mode: 'unifiedAccount', spot }) });
+  await importPositions(ui);
+  const item = [...ui.document.querySelectorAll('#preflight-items li')].find(li => /Account mode/.test(li.textContent));
+  assert.ok(item.classList.contains('warn'));
+  assert.match(item.textContent, /other perp DEXs/);
+});
+
+test('the readout names the reserve rate actually applied to the short', async t => {
+  const hl = structuredClone(hlShort);
+  const sol = hl.assetPositions.find(a => a.position.coin === 'SOL').position;
+  sol.leverage.value = 5; sol.marginUsed = String(Number(sol.positionValue) / 5);
+  const ui = await mount(t, { externalResponse: external({ hl }) });
+  await importPositions(ui);
+  const item = [...ui.document.querySelectorAll('#preflight-items li')].find(li => /HL margin buffer/.test(li.textContent));
+  assert.match(item.textContent, /20% reserve/);
 });
