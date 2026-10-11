@@ -75,7 +75,7 @@ export function buildImportedPortfolio(solana, hyperliquid) {
     snapshot: { complete: true, ageSeconds: 0, maxAgeSeconds: 300 },
     solana: solana.state,
     hyperliquid: hyperliquid.state,
-    fees: { ...base.fees, lendingWithdraw: 0, solSaleBps: solana.quote.solSaleBps, hlCloseBps: hyperliquid.reported.fees?.closeBps ?? base.fees.hlCloseBps }, // Kamino charges no withdrawal fee; the short-reduction fee is the account's taker rate when known
+    fees: { ...base.fees, lendingWithdraw: 0, solSaleBps: solana.quote.solSaleBps, hlCloseBps: hyperliquid.reported.fees?.closeBps ?? base.fees.hlCloseBps, hlSlippageBps: 10 }, // Kamino charges no withdrawal fee; the short-reduction fee is the account's taker rate when known; 10 bps reserved for buy-back slippage
     timing: base.timing,
   };
 }
@@ -84,10 +84,12 @@ export function preflightChecks({ imported, portfolio, constraints }) {
   const hl = imported.hyperliquid, so = imported.solana;
   const items = [];
   const push = (status, label, detail) => items.push({ status, label, detail });
-  if (hl.reported.accountMode === 'disabled') push('ok', 'Account mode', 'verified on HyperCore: standard (abstraction disabled)');
-  else if (hl.reported.accountMode === 'unifiedAccount' && hl.reported.crossCheck && !hl.reported.crossCheck.ok) push('warn', 'Account mode', `unified account verified, but the cross-check failed: spot USDC total minus maintenance ${money(hl.reported.crossCheck.implied, true)} vs exchange available ${money(hl.reported.crossCheck.available, true)}; positions on other perp DEXs (HIP-3) are not modelled`);
-  else if (hl.reported.accountMode === 'unifiedAccount') push('ok', 'Account mode', `verified on HyperCore: unified account (spot USDC ${money(hl.reported.spotUsdc.total, true)} is the equity, ${money(hl.reported.spotUsdc.hold, true)} held for margin or open orders)`);
-  else push('warn', 'Account mode', 'reported as default on HyperCore; treated as standard, not proven');
+  const unifiedMode = hl.reported.effectiveMode === 'unified';
+  const unifiedDetail = `spot USDC ${money(hl.reported.spotUsdc.total, true)} is the equity, ${money(hl.reported.spotUsdc.hold, true)} held for margin or open orders`;
+  if (unifiedMode && hl.reported.crossCheck && !hl.reported.crossCheck.ok) push('warn', 'Account mode', `unified account, but the cross-check failed: spot USDC total minus maintenance ${money(hl.reported.crossCheck.implied, true)} vs exchange available ${money(hl.reported.crossCheck.available, true)}; positions on other perp DEXs (HIP-3) are not modelled`);
+  else if (hl.reported.modeEvidence === 'verified') push('ok', 'Account mode', unifiedMode ? `verified on HyperCore: unified account (${unifiedDetail})` : 'verified on HyperCore: standard (abstraction disabled)');
+  else if (hl.reported.modeEvidence === 'inferred') push('ok', 'Account mode', `reported as default on HyperCore; the balances match the ${hl.reported.effectiveMode} layout, so it is modelled as ${hl.reported.effectiveMode}${unifiedMode ? ` (${unifiedDetail})` : ''}`);
+  else push('warn', 'Account mode', 'reported as default on HyperCore and could not be established from the balances (no perps equity yet); treated as standard');
   const exposure = portfolio.solana.sol - portfolio.hyperliquid.shortSol;
   if (Math.abs(exposure) < 0.000001) push('ok', 'Net exposure', '0 SOL: spot and short balanced');
   else push('warn', 'Net exposure', `${num(exposure)} SOL: not neutral (spot ${num(portfolio.solana.sol)}, short ${num(portfolio.hyperliquid.shortSol)}); keep-net-exposure preserves this${hl.reported.spotSol > 0 ? ` · HyperCore spot also holds ${hl.reported.spotSol} USOL, not counted` : ''}`);
@@ -99,7 +101,7 @@ export function preflightChecks({ imported, portfolio, constraints }) {
   const buffer = initialHlBuffer(portfolio);
   const reserveLabel = `${(portfolio.hyperliquid.conservativeMarginRate * 100).toFixed(portfolio.hyperliquid.conservativeMarginRate * 100 % 1 ? 2 : 0)}% reserve`;
   if (buffer < constraints.minHlBuffer) push('warn', 'HL margin buffer', `model buffer ${money(buffer, true)} (${reserveLabel}) is under your ${money(constraints.minHlBuffer)} floor: HL withdrawals only after reducing the short; non-HL routes are evaluated separately`);
-  else push('ok', 'HL margin buffer', `model buffer ${money(buffer, true)} (${reserveLabel}) above your ${money(constraints.minHlBuffer)} floor; ${hl.reported.accountMode === 'unifiedAccount' ? "derived from the exchange's total and hold:" : 'exchange reported'} ${money(hl.reported.withdrawable, true)} withdrawable (Δ ${money(Math.abs(buffer - hl.reported.withdrawable), true)})`);
+  else push('ok', 'HL margin buffer', `model buffer ${money(buffer, true)} (${reserveLabel}) above your ${money(constraints.minHlBuffer)} floor; ${unifiedMode ? "derived from the exchange's total and hold:" : 'exchange reported'} ${money(hl.reported.withdrawable, true)} withdrawable (Δ ${money(Math.abs(buffer - hl.reported.withdrawable), true)})`);
   const liquidity = so.reported.reserveLiquidity, deposit = portfolio.solana.lending.usdc;
   if (deposit <= 0) push('info', 'Kamino liquidity', 'no Kamino deposit to withdraw');
   else if (liquidity >= deposit) push('ok', 'Kamino liquidity', `${money(liquidity, true)} pool cash in the USDC reserve (before withdrawal caps) vs your ${money(deposit, true)} deposited`);

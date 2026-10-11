@@ -28,7 +28,8 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
     throw new AdapterError('VAULT_ADDRESS', `This address is a Hyperliquid vault (${String(vault.name ?? 'unnamed')}), not a user account; enter the address that holds your positions`);
   }
   const accountMode = typeof abstraction === 'string' ? abstraction : null;
-  const unified = accountMode === 'unifiedAccount';
+  const declaredMode = accountMode === 'disabled' ? 'standard' : accountMode === 'unifiedAccount' ? 'unified' : null;
+  let unified = declaredMode === 'unified';
   if (accountMode !== 'disabled' && accountMode !== 'default' && !unified) {
     const where = accountMode === 'portfolioMargin' ? 'portfolio margin pools several collateral assets, which this planner does not model' : 'this abstraction mode is not modelled';
     throw new AdapterError('UNSUPPORTED_ACCOUNT_MODE', `Hyperliquid account mode "${accountMode ?? 'unknown'}" is not supported: ${where}. Standard and Unified accounts are supported`);
@@ -40,12 +41,18 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
   const perpsWithdrawable = decimal(state.withdrawable, 'withdrawable');
   // Unified: the spot USDC total is the account equity (it already contains the perps margin and unrealised PnL); `hold`
   // only reduces what is withdrawable (perps margin plus holds for open spot orders). Both are the exchange's own figures.
-  if (unified && (!spot || typeof spot !== 'object' || !Array.isArray(spot.balances))) throw new AdapterError('INVALID_RESPONSE', 'Unified account: the spot clearinghouse state is missing or malformed');
   const spotBalances = spot && Array.isArray(spot.balances) ? spot.balances : [];
   const usdcEntry = spotBalances.find((b) => b && b.coin === 'USDC');
   const spotUsdc = { total: usdcEntry ? decimal(usdcEntry.total, 'spot USDC total') : 0, hold: usdcEntry ? decimal(usdcEntry.hold ?? 0, 'spot USDC hold') : 0 };
   if (spotUsdc.total < 0 || spotUsdc.hold < 0) throw new AdapterError('INVALID_RESPONSE', 'Spot USDC total and hold must be non-negative');
   if (spotUsdc.hold > spotUsdc.total + 1e-6) throw new AdapterError('INVALID_RESPONSE', `Spot USDC hold ($${spotUsdc.hold.toFixed(2)}) exceeds the total ($${spotUsdc.total.toFixed(2)}); the balances do not fit the model`);
+  // A "default" abstraction setting is not a verified mode: establish it from the balances. In the unified layout the spot
+  // total contains the perps equity and the hold equals perps equity minus perps withdrawable; a standard account keeps them apart.
+  const layoutUnified = Boolean(usdcEntry) && perpsAccountValue > 0 && Math.abs(spotUsdc.hold - Math.max(0, perpsAccountValue - perpsWithdrawable)) <= Math.max(1, spotUsdc.total * 0.0001) && spotUsdc.total >= perpsAccountValue - 1;
+  const effectiveMode = declaredMode ?? (layoutUnified ? 'unified' : 'standard');
+  const modeEvidence = declaredMode ? 'verified' : layoutUnified || perpsAccountValue > 0 ? 'inferred' : 'unknown';
+  unified = effectiveMode === 'unified';
+  if (unified && (!spot || typeof spot !== 'object' || !Array.isArray(spot.balances))) throw new AdapterError('INVALID_RESPONSE', 'Unified account: the spot clearinghouse state is missing or malformed');
   if (unified && !usdcEntry && (perpsAccountValue !== 0 || (Array.isArray(state.assetPositions) && state.assetPositions.length > 0))) throw new AdapterError('INVALID_RESPONSE', 'Unified account: the spot USDC entry is missing although the account has positions or equity');
   const accountValue = unified ? spotUsdc.total : perpsAccountValue;
   const withdrawable = unified ? round2(Math.max(0, spotUsdc.total - spotUsdc.hold)) : perpsWithdrawable;
@@ -140,9 +147,13 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
     if (Number.isFinite(taker) && taker >= 0 && taker < 0.01 && closeBps != null) fees = { takerRate: taker, makerRate: Number.isFinite(maker) ? maker : null, closeBps };
   }
   const assumptions = [
-    unified
-      ? 'Unified account verified on HyperCore: the spot USDC total is the account equity (it already contains the perps margin and unrealised PnL); withdrawable is spot USDC total minus hold, both exchange figures'
-      : accountMode === 'disabled' ? 'Account mode verified on HyperCore: standard (abstraction disabled)' : 'Account mode reported as "default" on HyperCore (no abstraction chosen); treated as a standard account',
+    modeEvidence === 'verified'
+      ? unified
+        ? 'Unified account verified on HyperCore: the spot USDC total is the account equity (it already contains the perps margin and unrealised PnL); withdrawable is spot USDC total minus hold, both exchange figures'
+        : 'Account mode verified on HyperCore: standard (abstraction disabled)'
+      : modeEvidence === 'inferred'
+        ? `Account mode reported as "default" on HyperCore; the balances match the ${effectiveMode} layout (${unified ? 'the spot total contains the perps equity and the hold equals perps equity minus perps withdrawable' : 'perps equity is held apart from spot USDC'}), so it is modelled as ${effectiveMode}`
+        : 'Account mode reported as "default" on HyperCore and could not be established from the balances (no perps equity yet); treated as standard',
     `Reserve is ${(reserveRate * 100).toFixed(reserveRate * 100 % 1 ? 2 : 0)}% of short notional (the larger of the exchange's 10% transfer floor and the position's initial margin rate), not the exchange maintenance margin`,
     "Other open positions lock the larger of their initial margin and 10% of their notional (the exchange's transfer rule), deducted from equity",
   ];
@@ -161,7 +172,7 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
     observedAt: new Date(now()).toISOString(),
     source: 'Hyperliquid public info API',
     state: { accountMode: unified ? 'unified' : 'standard', marginMode: 'cross', asset: 'SOL', shortSol, markPrice, collateral, conservativeMarginRate: reserveRate, freeWithdrawable, fundingApr, lotSize, minOrderUsd },
-    reported: { accountMode, accountValue: round2(accountValue), withdrawable, spotUsdc, lockedMargin: locked, otherStables, spotSol, funding, crossCheck, fees, szDecimals, assetIndex: assetIndex >= 0 ? assetIndex : null, marginUsed: decimal(summary.totalMarginUsed ?? 0, 'totalMarginUsed'), ...solReport, otherPositions },
+    reported: { accountMode, effectiveMode, modeEvidence, accountValue: round2(accountValue), withdrawable, spotUsdc, lockedMargin: locked, otherStables, spotSol, funding, crossCheck, fees, szDecimals, assetIndex: assetIndex >= 0 ? assetIndex : null, marginUsed: decimal(summary.totalMarginUsed ?? 0, 'totalMarginUsed'), ...solReport, otherPositions },
     assumptions,
   };
 }

@@ -484,3 +484,22 @@ test('carry keeps parts-per-million precision instead of rounding the rate to wh
   const paired = planExit(p, defaultConstraints()).plans.find(x => x.id === 'paired-unwind');
   assert.equal(paired.carryBreakdown.funding, 0.1); // 2,006.02 × 0.00005 = $0.10, not $0.20 from a 1 bps rounding
 });
+
+test('a slippage allowance on short reductions is charged to HL collateral like the close fee and shown in the breakdown', () => {
+  const base = planExit(createDemoPortfolio(), defaultConstraints()).plans.find(p => p.id === 'paired-unwind');
+  assert.equal(base.feeBreakdown.shortSlippage, 0);
+  const p = createDemoPortfolio(); p.fees.hlSlippageBps = 10;
+  const withSlip = planExit(p, defaultConstraints()).plans.find(x => x.id === 'paired-unwind');
+  const allowance = Math.ceil(20.0602 * 100 * 0.001 * 100) / 100; // $2.01 on $2,006.02 of notional
+  assert.equal(withSlip.feeBreakdown.shortSlippage, allowance);
+  assert.equal(withSlip.feesFromCollateral, Math.round((base.feesFromCollateral + allowance) * 100) / 100);
+  assert.equal(withSlip.hlCollateralAfter, Math.round((base.hlCollateralAfter - allowance) * 100) / 100);
+  assert.equal(withSlip.fees, Math.round((base.fees + allowance) * 100) / 100);
+  assert.equal(withSlip.netCash, base.netCash, 'slippage comes out of collateral, not cash');
+  for (const value of [-1, 10001, 1.5, 'x']) {
+    const bad = createDemoPortfolio(); bad.fees.hlSlippageBps = value;
+    assert.ok(planExit(bad, defaultConstraints()).errors.some(err => err.includes('fees.hlSlippageBps')), `${value} rejected`);
+  }
+  const absent = createDemoPortfolio(); delete absent.fees.hlSlippageBps;
+  assert.deepEqual(planExit(absent, defaultConstraints()).errors, []);
+});

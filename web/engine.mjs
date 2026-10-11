@@ -100,6 +100,7 @@ function validate(portfolio, supplied) {
   if (s?.sol * s?.solPrice > 1_000_000_000 || h?.shortSol * h?.markPrice > 1_000_000_000) errors.push('Position notional exceeds the supported scenario range.');
   for (const key of ['lendingWithdraw', 'hlTransfer', 'borrowFixed']) number(f?.[key], `fees.${key}`);
   for (const key of ['solSaleBps', 'hlCloseBps', 'borrowAprBps']) number(f?.[key], `fees.${key}`, { max: 10_000, scale: 1 });
+  if (f?.hlSlippageBps !== undefined && f?.hlSlippageBps !== null) number(f.hlSlippageBps, 'fees.hlSlippageBps', { max: 10_000, scale: 1 }); // optional execution allowance on short reductions
   for (const key of ['lendingWithdrawHours', 'hlTransferHours', 'tradeHours', 'borrowHours']) number(t?.[key], `timing.${key}`, { max: 8760, scale: 1_000_000 });
   if (!errors.length) {
     const required = requiredMarginCents(h.shortSol, h.markPrice, h.conservativeMarginRate);
@@ -142,9 +143,11 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
   const originalRequired = requiredMargin(initialShort);
   const initialBuffer = initialCollateral - originalRequired;
   const closeFee = q => feeFor(mulCeil(q, mark, UNITS), f.hlCloseBps);
+  // Buying back above mark realises a loss against collateral; the allowance reserves it before any book is read.
+  const slippage = q => feeFor(mulCeil(q, mark, UNITS), f.hlSlippageBps ?? 0);
   const hlCapacity = closed => Math.max(0, Math.min(
-    initialCollateral - closeFee(closed) - requiredMargin(initialShort - closed) - minimumBuffer,
-    initialFree + originalRequired - requiredMargin(initialShort - closed) - closeFee(closed)
+    initialCollateral - closeFee(closed) - slippage(closed) - requiredMargin(initialShort - closed) - minimumBuffer,
+    initialFree + originalRequired - requiredMargin(initialShort - closed) - closeFee(closed) - slippage(closed)
   ));
   const borrowCapacity = sold => s.borrow.enabled ? Math.max(0, Math.min(cents(s.borrow.capacity), mulFloor(notional(initialSol - sold), ltvBps, 10_000))) : 0;
   const saleNet = q => notional(q) - feeFor(notional(q), f.solSaleBps);
@@ -172,7 +175,7 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
     signatures.add(signature);
     const proceedsFees = (a.lending ? fixedLendingFee : 0) + (a.hl ? fixedTransferFee : 0)
       + feeFor(notional(a.sold), f.solSaleBps) + (a.borrowed ? fixedBorrowFee : 0);
-    const collateralFees = closeFee(a.closed);
+    const collateralFees = closeFee(a.closed) + slippage(a.closed);
     const hlAfter = initialCollateral - a.hl - collateralFees;
     const marginAfter = requiredMargin(initialShort - a.closed);
     const net = cash(a), rejections = [], steps = [];
@@ -205,7 +208,8 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
     const feeBreakdown = {
       lendingWithdrawal: dollars(a.lending ? fixedLendingFee : 0),
       spotSale: dollars(feeFor(notional(a.sold), f.solSaleBps)),
-      shortClose: dollars(collateralFees),
+      shortClose: dollars(closeFee(a.closed)),
+      shortSlippage: dollars(slippage(a.closed)),
       hlTransfer: dollars(a.hl ? fixedTransferFee : 0),
       borrowOrigination: dollars(a.borrowed ? fixedBorrowFee : 0)
     };

@@ -66,6 +66,7 @@ Steps are `{ venue, action, amount, unit }` objects. Additional auditable fields
 - Maximum already-free collateral: $3,000 before applying the user's buffer
 - Hypothetical borrowing comparison: up to $3,000 at 30% LTV against retained SOL; no borrowing adapter exists
 - Fees: lending withdrawal $0.25; SOL sale 30 bps; short reduction 5 bps; HL-to-Solana transfer $1; loan origination $0.50
+- `fees.hlSlippageBps` (optional, integer basis points): an execution allowance on short reductions, charged to HL collateral like the close fee and shown as `feeBreakdown.shortSlippage`; the scenario sets none, imported portfolios reserve 10 bps
 - Borrow APR: 800 bps (8%), an invented rate
 - Carry rates: `hyperliquid.fundingApr` 0.08 and `solana.lending.supplyApy` 0.05 per year, invented; adapters supply real values or `null` when unknown
 - Sequential durations: lending withdrawal 0.1 hours; trade bundle 0.1 hours; HL transfer 0.5 hours; borrowing 0.1 hours

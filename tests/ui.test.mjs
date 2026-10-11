@@ -605,6 +605,7 @@ test('imported rehearsal simulates the sell leg read-only and other steps are la
   assert.match(ui.get('#simulation-result').textContent, /taker fee/);
   assert.match(ui.get('#simulation-result').textContent, /no order placed/);
   assert.match(ui.get('#simulation-result').textContent, /cost vs plan/);
+  assert.match(ui.get('#simulation-result').textContent, /vs 10 bps allowance/);
   assert.match(ui.get('#simulation-result').textContent, /book age/);
   const order = ui.get('#order-preview').textContent;
   assert.match(order, /"a":5/);
@@ -995,8 +996,9 @@ test('the pre-flight readout warns when the HL buffer is under the floor and whe
   assert.ok(text('HL margin buffer').classList.contains('warn'));
   assert.match(text('HL margin buffer').textContent, /under your \$1,500 floor/);
   assert.match(text('HL margin buffer').textContent, /non-HL routes are evaluated separately/);
-  assert.ok(text('Account mode').classList.contains('warn'), 'default mode is a warning, not a pass');
+  assert.ok(text('Account mode').classList.contains('ok'), 'a default mode whose balances match the standard layout passes as inferred');
   assert.match(text('Account mode').textContent, /default/);
+  assert.match(text('Account mode').textContent, /standard layout/);
 });
 
 test('a unified Hyperliquid account imports and the pre-flight readout says so', async t => {
@@ -1147,4 +1149,15 @@ test('while a simulation is pending the rehearsal cannot advance, so a late answ
   assert.match(ui.get('#simulation-result').textContent, /Book preview/);
   assert.equal(ui.get('#rehearsal-next').disabled, false);
   assert.match(ui.get('.rehearsal-step.current').textContent, /Reduce SOL short/);
+});
+
+test('a default account with no equity is flagged as not establishable, and the evidence dialog lists the slippage allowance', async t => {
+  const empty = structuredClone(hlNoPosition); empty.marginSummary.accountValue = '0.0'; empty.withdrawable = '0.0';
+  const ui = await mount(t, { externalResponse: external({ hl: empty, mode: 'default' }) });
+  await importPositions(ui);
+  const item = [...ui.document.querySelectorAll('#preflight-items li')].find(li => /Account mode/.test(li.textContent));
+  assert.ok(item.classList.contains('warn'));
+  assert.match(item.textContent, /could not be established/);
+  await ui.click('#open-evidence');
+  assert.match(ui.get('#dialog-body').textContent, /slippage allowance 0\.10%/);
 });

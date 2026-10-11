@@ -22,6 +22,7 @@ test('the pre-flight checks and the report come from the imported state alone', 
   const [solana, hyperliquid] = await Promise.all([importSolana(WALLET, { fetchImpl }), importHyperliquid(HL, { fetchImpl })]);
   const portfolio = buildImportedPortfolio(solana, hyperliquid);
   assert.equal(portfolio.fees.hlCloseBps, 4, 'taker rate from the account');
+  assert.equal(portfolio.fees.hlSlippageBps, 10, 'a 10 bps execution allowance on short reductions for imported routes');
   const constraints = { ...defaultConstraints(), target: 500 };
   const checks = preflightChecks({ imported: { solana, hyperliquid }, portfolio, constraints });
   assert.ok(checks.find(c => c.label === 'Account mode' && c.status === 'ok'));

@@ -334,3 +334,24 @@ test('a unified hold larger than the total is rejected instead of clamped', asyn
   usdc.hold = String(Number(usdc.total) + 1);
   await assert.rejects(importHyperliquid(ADDR, { fetchImpl: fetchFor(await fixture('hl-unified-perps'), { mode: 'unifiedAccount', spot }) }), e => e.code === 'INVALID_RESPONSE' && /hold/i.test(e.message));
 });
+
+test('a "default" account mode is established from the balances: unified layout, standard layout, or unknown', async () => {
+  const unifiedPerps = await fixture('hl-unified-perps'), unifiedSpot = await fixture('hl-unified-spot');
+  const asUnified = await importHyperliquid(ADDR, { fetchImpl: fetchFor(unifiedPerps, { mode: 'default', spot: unifiedSpot }) });
+  assert.equal(asUnified.state.accountMode, 'unified');
+  assert.deepEqual([asUnified.reported.effectiveMode, asUnified.reported.modeEvidence], ['unified', 'inferred']);
+  const verified = await importHyperliquid(ADDR, { fetchImpl: fetchFor(unifiedPerps, { mode: 'unifiedAccount', spot: unifiedSpot }) });
+  assert.equal(asUnified.state.collateral, verified.state.collateral);
+  assert.deepEqual([verified.reported.effectiveMode, verified.reported.modeEvidence], ['unified', 'verified']);
+  assert.ok(asUnified.assumptions.some(l => /reported as "default"/.test(l) && /unified layout/.test(l)), asUnified.assumptions.join(' | '));
+  const asStandard = await importHyperliquid(ADDR, { fetchImpl: fetchFor(await fixture('hl-sol-short'), { mode: 'default' }) });
+  assert.equal(asStandard.state.accountMode, 'standard');
+  assert.deepEqual([asStandard.reported.effectiveMode, asStandard.reported.modeEvidence], ['standard', 'inferred']);
+  assert.ok(asStandard.assumptions.some(l => /standard layout/.test(l)), asStandard.assumptions.join(' | '));
+  const empty = structuredClone(await fixture('hl-no-position')); empty.marginSummary.accountValue = '0.0'; empty.withdrawable = '0.0';
+  const unknown = await importHyperliquid(ADDR, { fetchImpl: fetchFor(empty, { mode: 'default' }) });
+  assert.deepEqual([unknown.reported.effectiveMode, unknown.reported.modeEvidence], ['standard', 'unknown']);
+  assert.ok(unknown.assumptions.some(l => /could not be established/.test(l)), unknown.assumptions.join(' | '));
+  const explicit = await importHyperliquid(ADDR, { fetchImpl: fetchFor(await fixture('hl-sol-short')) });
+  assert.deepEqual([explicit.reported.effectiveMode, explicit.reported.modeEvidence], ['standard', 'verified']);
+});
