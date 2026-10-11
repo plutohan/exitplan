@@ -154,3 +154,21 @@ test('imports the USDC reserve supply APY for carry, null when the metrics omit 
   const bad = await importSolana(WALLET, { fetchImpl: fetchFor({ ...data, metrics: [{ ...DEFAULT_METRICS[0], supplyApy: 'x' }] }) });
   assert.equal(bad.state.lending.supplyApy, null);
 });
+
+test('when the Jupiter swap quote is down, the planning price falls back to Jupiter\'s price endpoint with a conservative sale fee and says so', async () => {
+  const data = { obligations: await fixture('kamino-obligations'), quote: await fixture('jupiter-quote') };
+  const base = fetchFor(data);
+  const fetchImpl = async (url, init) => {
+    const target = new URL(url);
+    if (target.host === 'lite-api.jup.ag' && target.pathname === '/swap/v1/quote') return new Response('down', { status: 503 });
+    if (target.host === 'lite-api.jup.ag' && target.pathname === '/price/v3') { assert.equal(target.searchParams.get('ids'), 'So11111111111111111111111111111111111111112'); return Response.json({ So11111111111111111111111111111111111111112: { usdPrice: 111.14267732935319, decimals: 9 } }); }
+    return base(url, init);
+  };
+  const result = await importSolana(WALLET, { fetchImpl, retryDelayMs: 1 });
+  assert.equal(result.state.solPrice, 111.14);
+  assert.equal(result.quote.solSaleBps, 50);
+  assert.equal(result.quote.source, 'jupiter-price');
+  assert.ok(result.assumptions.some(line => /swap quote unavailable/i.test(line) && /50 bps/.test(line)), result.assumptions.join(' | '));
+  const bothDown = async (url, init) => { const target = new URL(url); if (target.host === 'lite-api.jup.ag' && target.pathname !== '/ultra/v1/balances/' + WALLET && !target.pathname.startsWith('/ultra/')) return new Response('down', { status: 503 }); return base(url, init); };
+  await assert.rejects(importSolana(WALLET, { fetchImpl: bothDown, retryDelayMs: 1 }), e => e.code === 'HTTP_ERROR');
+});

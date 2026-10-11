@@ -30,21 +30,39 @@ export async function rpc(method, params, { fetchImpl = globalThis.fetch, timeou
   return payload.result;
 }
 
-export async function quoteSolToUsdc(lamports, { fetchImpl = globalThis.fetch, timeoutMs = 8000 } = {}) {
+export const JUPITER_PRICE_URL = 'https://lite-api.jup.ag/price/v3';
+export async function quoteSolToUsdc(lamports, { fetchImpl = globalThis.fetch, timeoutMs = 8000, retryDelayMs } = {}) {
   const url = `${JUPITER_QUOTE_URL}?inputMint=${SOL_MINT}&outputMint=${USDC_MINT}&amount=${lamports}&slippageBps=50`;
-  const quote = record(await requestJson(url, { fetchImpl, timeoutMs }), 'Jupiter quote');
+  const quote = record(await requestJson(url, { fetchImpl, timeoutMs, ...(retryDelayMs === undefined ? {} : { retryDelayMs }) }), 'Jupiter quote');
   const outAmount = decimal(quote.outAmount, 'Jupiter outAmount');
   if (outAmount <= 0) throw new AdapterError('INVALID_RESPONSE', 'Jupiter quote returned no output amount');
-  return { quote, outAmount };
+  return { quote, outAmount, fallback: false };
+}
+/** Same host, different service: when the swap-quote API is down, Jupiter's price endpoint still gives a planning price. The sale fee is then set conservatively and the rehearsal re-quotes the exact amount. */
+export async function priceSolFromJupiter({ fetchImpl = globalThis.fetch, timeoutMs = 8000, retryDelayMs } = {}) {
+  const payload = record(await requestJson(`${JUPITER_PRICE_URL}?ids=${SOL_MINT}`, { fetchImpl, timeoutMs, ...(retryDelayMs === undefined ? {} : { retryDelayMs }) }), 'Jupiter price');
+  const entry = record(payload[SOL_MINT], 'Jupiter price entry');
+  const usd = decimal(entry.usdPrice, 'Jupiter usdPrice');
+  if (usd <= 0) throw new AdapterError('INVALID_RESPONSE', 'Jupiter price is not positive');
+  const outAmount = Math.round(usd * 1e6);
+  return { quote: { outAmount: String(outAmount), priceImpactPct: null }, outAmount, fallback: true };
+}
+async function quoteOrPrice(lamports, options) {
+  try {
+    return await quoteSolToUsdc(lamports, options);
+  } catch (error) {
+    if (!['HTTP_ERROR', 'NETWORK_ERROR', 'TIMEOUT'].includes(error.code)) throw error;
+    try { return await priceSolFromJupiter(options); } catch { throw error; }
+  }
 }
 
 export async function importSolana(address, { fetchImpl = globalThis.fetch, now = Date.now, timeoutMs = 8000 } = {}) {
   if (!isSolanaAddress(address)) throw new AdapterError('INVALID_ADDRESS', 'Enter a Solana wallet address (base58, 32–44 characters)');
   const options = { fetchImpl, timeoutMs };
-  const [balance, obligations, { quote, outAmount }, balances, reserves] = await Promise.all([
+  const [balance, obligations, { quote, outAmount, fallback }, balances, reserves] = await Promise.all([
     rpc('getBalance', [address], options),
     requestJson(`${KAMINO_API_URL}/kamino-market/${KAMINO_MAIN_MARKET}/users/${address}/obligations`, options),
-    quoteSolToUsdc(LAMPORTS_PER_SOL, options),
+    quoteOrPrice(LAMPORTS_PER_SOL, options),
     requestJson(`${JUPITER_BALANCES_URL}/${address}`, options),
     requestJson(`${KAMINO_API_URL}/kamino-market/${KAMINO_MAIN_MARKET}/reserves/metrics`, options),
   ]);
@@ -99,14 +117,14 @@ export async function importSolana(address, { fetchImpl = globalThis.fetch, now 
       wallet: { usdc: walletUsdc },
       borrow: { enabled: true, capacity: round2(sol * solPrice * BORROW_LTV), maxLtv: BORROW_LTV },
     },
-    quote: { outUsdcPerSol: outAmount / 1e6, priceImpactPct: String(quote.priceImpactPct ?? '0'), solSaleBps: solSaleBpsFromQuote(quote) },
+    quote: { outUsdcPerSol: outAmount / 1e6, priceImpactPct: fallback ? null : String(quote.priceImpactPct ?? '0'), solSaleBps: fallback ? 50 : solSaleBpsFromQuote(quote), source: fallback ? 'jupiter-price' : 'jupiter-swap-quote' },
     reported: { lamports, obligations: reports, reserveLiquidity: liquidity },
     sources: ['publicnode RPC getBalance', 'Kamino main-market obligations API', 'Kamino reserve metrics (USDC liquidity)', 'Jupiter quote for 1 SOL → USDC', 'Jupiter wallet token balances (USDC in the wallet)'],
     assumptions: [
       `Withdraw capacity is capped by the USDC reserve liquidity at load ($${liquidity.toLocaleString('en-US', { maximumFractionDigits: 0 })} available)`,
       supplyApy == null ? 'Kamino USDC supply APY unavailable at load; carry on the deposit is unknown' : `Carry uses the Kamino USDC reserve supply APY at load (${(supplyApy * 100).toFixed(2)}%); it is an estimate at today's rate`,
       'Borrow capacity is 30% of SOL value, a model rule, not a Kamino quote',
-      'Sales are priced from a 1 SOL Jupiter quote plus the fee rule; the rehearsal re-quotes the exact amount',
+      fallback ? `Jupiter swap quote unavailable at load; the planning price comes from Jupiter's price endpoint ($${solPrice.toFixed(2)}) and the sale fee is set to 50 bps; the rehearsal re-quotes the exact amount` : 'Sales are priced from a 1 SOL Jupiter quote plus the fee rule; the rehearsal re-quotes the exact amount',
       ...(ignored.length ? [`${ignored.length} other obligation${ignored.length === 1 ? '' : 's'} (${ignored.join(', ')}) ignored: only the vanilla obligation is modelled and rehearsed`] : []),
     ],
   };
