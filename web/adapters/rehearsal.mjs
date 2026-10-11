@@ -54,6 +54,7 @@ export async function simulateKaminoWithdraw({ address, amountUsdc, fetchImpl = 
     logCount: data.logCount ?? 0,
     instructions: Array.isArray(data.instructions) ? data.instructions.map(String) : [],
     amountUsdc: data.amountUsdc,
+    deliveredUsdc: typeof data.deliveredUsdc === 'number' ? data.deliveredUsdc : null,
     observedAt: data.observedAt ?? null,
   };
 }

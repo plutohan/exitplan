@@ -129,6 +129,8 @@ export async function getMarketSnapshot({ fetchImpl = globalThis.fetch, now = Da
 }
 
 /**
+ * LEGACY: offline normaliser from the synthetic PoC, kept with its tests. The app imports accounts through
+ * web/adapters/hyperliquid.mjs, which verifies the account mode on HyperCore and accepts 'default' as standard.
  * Offline only: no calls, address discovery, or persistence. A caller must supply
  * an explicitly standard, abstraction-disabled, native-DEX export. Imported
  * assertions cannot authenticate account mode, ownership, or current freshness.

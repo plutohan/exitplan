@@ -22,7 +22,8 @@ test('normalises a cross-margin SOL short into the engine shape', async () => {
   const result = await importHyperliquid(ADDR, { fetchImpl: fetchFor(state), now: () => 1_791_731_274_640 });
   assert.equal(result.evidence, 'imported');
   assert.equal(result.venue, 'hyperliquid');
-  assert.equal(result.state.markPrice, 109.7);
+  const sol = solPosition(state).position;
+  assert.equal(result.state.markPrice, Math.round((Number(sol.positionValue) / Math.abs(Number(sol.szi))) * 100) / 100, 'mark comes from the position value when a position exists');
   assert.ok(result.state.shortSol > 0);
   assert.ok((String(result.state.shortSol).split('.')[1]?.length ?? 0) <= 6);
   assert.equal(result.state.accountMode, 'standard');
@@ -127,4 +128,11 @@ test('liquidation estimate is anchored on the exchange price and moves the right
   assert.ok(afterClose > 267.04, String(afterClose));
   assert.equal(estimateLiquidationAfter({ ...base, withdraw: 0, closeQty: 91.32, closeFee: 0 }), null);
   assert.equal(estimateLiquidationAfter({ ...base, liquidationPrice: null, withdraw: 0, closeQty: 0, closeFee: 0 }), null);
+});
+
+test('unified and portfolio-margin rejections explain where the USDC sits and what works today', async () => {
+  const state = await fixture('hl-sol-short');
+  for (const mode of ['unifiedAccount', 'portfolioMargin']) {
+    await assert.rejects(importHyperliquid(ADDR, { fetchImpl: fetchFor(state, { mode }) }), e => e.code === 'UNSUPPORTED_ACCOUNT_MODE' && /spot balance/.test(e.message) && /Standard accounts today/.test(e.message));
+  }
 });

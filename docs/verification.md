@@ -1,6 +1,6 @@
 # Verification — 2026-10-11
 
-`node --test tests/*.test.mjs`: 186 tests passed, 0 failed.
+`node --test tests/*.test.mjs`: 192 tests passed, 0 failed.
 
 - 27 engine tests (deterministic planner, imported evidence, zero-short account, reserve helper) and 1 conservation grid over 650 feasible scenario plans
 - Hyperliquid, Solana and rehearsal adapter tests on captured real API responses in `tests/fixtures/`, plus server-side Kamino simulation tests with an injected fake SDK that pins the exact build and simulate calls
@@ -11,4 +11,4 @@ Live checks on 2026-10-11 (read-only): the Solana and Hyperliquid demo addresses
 
 Real-browser check on 2026-10-11 21:40 UTC+4 (Playwright driving the installed Google Chrome, headless, against production): page load 1.8 s, no console errors or failed requests, public example imported (account mode verified, wallet USDC detected), paired route selected, liquidation card rendered, sell-leg simulation succeeded (75,547 CU, quoted $164.44 vs plan estimate $163.61), AI proposal returned and applied after confirmation, plan link copied with every constraint, phone width (390 px) without horizontal overflow, deep link loaded positions.
 
-Not performed: a production security audit, verification of Hyperliquid account modes, or any transaction submission.
+Not performed: a production security audit, simulation of the Hyperliquid legs, or any transaction submission.

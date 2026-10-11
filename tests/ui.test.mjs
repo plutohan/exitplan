@@ -651,15 +651,15 @@ test('the hedge switch is labelled as net exposure, not a ratio', async t => {
   assert.match(ui.get('#intent-feedback').textContent, /Keep net SOL exposure: on → off/);
 });
 
-test('an imported snapshot older than five minutes fails closed until reloaded', async t => {
+test('an imported snapshot older than five minutes reloads itself once instead of blocking', async t => {
   const ui = await mount(t, { externalResponse: external() });
   await importPositions(ui);
+  const loads = () => ui.calls.filter(call => call.host === 'api.hyperliquid.xyz' && JSON.parse(call.body).type === 'clearinghouseState').length;
+  assert.equal(loads(), 1);
   await ui.advance(301_000);
   await ui.input('#target', 2500);
-  assert.match(ui.get('#result-banner').textContent, /older than 5 minutes/);
-  assert.match(ui.get('#import-status').textContent, /older than 5 minutes/);
-  assert.equal(ui.get('#rehearse').disabled, true);
-  await ui.click('#load-positions');
+  await flush(); await flush();
+  assert.equal(loads(), 2, 'a stale snapshot triggers one automatic reload');
   assert.match(ui.get('#import-status').textContent, /Loaded/);
   assert.doesNotMatch(ui.get('#result-banner').textContent, /older than/);
   assert.equal(ui.get('#rehearse').disabled, false);
@@ -770,6 +770,7 @@ test('imported positions show the exchange liquidation price and an estimate aft
   await ui.input('#target', 500);
   await ui.click('[data-plan="paired-unwind"]');
   assert.match(ui.get('#position-cards').textContent, /estimate/);
+  assert.match(ui.get('#position-cards').textContent, /SOL only; other positions held constant/);
 });
 
 test('Phantom connect fills both addresses read-only, and says so when Phantom is missing', async t => {
@@ -862,7 +863,7 @@ test('the page ships an inline icon so browsers do not request a missing favicon
 });
 
 test('imported rehearsal simulates the Kamino withdrawal through the server function', async t => {
-  const ui = await mount(t, { externalResponse: external(), kaminoResponse: call => { const body = JSON.parse(call.body); assert.equal(body.wallet, WALLET); assert.ok(body.amountUsdc > 0); return json({ ok: true, error: null, unitsConsumed: 112573, logCount: 38, instructions: ['RefreshReserve[r]', 'RefreshObligation[o]', 'withdrawV2'], amountUsdc: body.amountUsdc }); } });
+  const ui = await mount(t, { externalResponse: external(), kaminoResponse: call => { const body = JSON.parse(call.body); assert.equal(body.wallet, WALLET); assert.ok(body.amountUsdc > 0); return json({ ok: true, error: null, unitsConsumed: 112573, logCount: 38, instructions: ['RefreshReserve[r]', 'RefreshObligation[o]', 'withdrawV2'], amountUsdc: body.amountUsdc, deliveredUsdc: body.amountUsdc }); } });
   await importPositions(ui);
   await ui.input('#target', 2000); // wallet USDC + Kamino withdrawal
   assert.equal(ui.get('.plan-card.selected').dataset.plan.includes('lending') || ui.get('.plan-card.selected').dataset.plan === 'withdraw-lending', true);
@@ -876,6 +877,7 @@ test('imported rehearsal simulates the Kamino withdrawal through the server func
   assert.match(ui.get('#simulation-result').textContent, /Simulation succeeded/);
   assert.match(ui.get('#simulation-result').textContent, /112,573/);
   assert.match(ui.get('#simulation-result').textContent, /withdrawV2/);
+  assert.match(ui.get('#simulation-result').textContent, /would deliver \$1,663\.60 \(plan \$1,663\.60\)/);
   assert.doesNotMatch(ui.get('#dialog-body').textContent, /withdrawal transaction is not built/);
   assertNoExecutionCalls(ui);
 });
@@ -899,4 +901,17 @@ test('imported copy is honest about provenance, HL delivery and large sales', as
   const hlCard = [...ui.document.querySelectorAll('.plan-card')].find(card => /Withdraw free HL collateral/.test(card.textContent));
   assert.ok(hlCard, 'an HL transfer route is displayed at $2,000');
   assert.match(hlCard.textContent, /delivery fee not verified/);
+});
+
+test('a Kamino simulation that delivers less than the plan is flagged, and imported Kamino withdrawals carry no model fee', async t => {
+  const ui = await mount(t, { externalResponse: external(), kaminoResponse: call => json({ ok: true, error: null, unitsConsumed: 1000, logCount: 3, instructions: ['withdrawV2'], amountUsdc: JSON.parse(call.body).amountUsdc, deliveredUsdc: 1000 }) });
+  await importPositions(ui);
+  await ui.input('#target', 2000);
+  assert.match(ui.get('.plan-card.selected').textContent, /Fees \$0\.00/);
+  await ui.click('#rehearse');
+  await ui.click('#rehearsal-next');
+  await ui.click('#simulate-step');
+  for (let i = 0; i < 60 && /Simulating/.test(ui.get('#simulation-result').textContent); i++) await flush();
+  assert.match(ui.get('#simulation-result').textContent, /short of the plan/);
+  assert.ok(ui.get('#simulation-result').classList.contains('error'));
 });

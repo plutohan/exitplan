@@ -4,9 +4,11 @@ import { simulateKaminoWithdraw, USDC_RESERVE, KAMINO_MAIN_MARKET } from '../ser
 
 const WALLET = 'DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK';
 const calls = [];
-function fakeSdk({ obligation = { obligationAddress: 'Dhs7xv1M' }, simulation = { err: null, unitsConsumed: 112573n, logs: new Array(38).fill('log') }, failLoad = false } = {}) {
+const tokenAccountData = amount => { const bytes = new Uint8Array(165); new DataView(bytes.buffer).setBigUint64(64, BigInt(amount), true); return Buffer.from(bytes).toString('base64'); };
+function fakeSdk({ obligation = { obligationAddress: 'Dhs7xv1M' }, simulation = { err: null, unitsConsumed: 112573n, logs: new Array(38).fill('log'), accounts: [{ data: [tokenAccountData(1_000_000 + 1_663_850_000), 'base64'] }] }, failLoad = false, preBalance = '1000000' } = {}) {
   calls.length = 0;
   const rpc = {
+    getTokenAccountBalance: () => ({ send: async () => { if (preBalance === null) throw new Error('could not find account'); return { value: { amount: preBalance } }; } }),
     getSlot: () => ({ send: async () => 455_000_000n }),
     getLatestBlockhash: () => ({ send: async () => ({ value: { blockhash: 'hash', lastValidBlockHeight: 1n } }) }),
     simulateTransaction: (wire, options) => ({ send: async () => { calls.push(['simulateTransaction', wire, options]); return { value: simulation }; } }),
@@ -22,6 +24,8 @@ function fakeSdk({ obligation = { obligationAddress: 'Dhs7xv1M' }, simulation = 
     appendTransactionMessageInstructions: (instructions, message) => ({ ...message, instructions: [...message.instructions, ...instructions] }),
     compileTransaction: message => ({ message }),
     getBase64EncodedWireTransaction: tx => 'WIRE:' + tx.message.instructions.length,
+    getProgramDerivedAddress: async ({ seeds }) => { calls.push(['pda', seeds.length]); return ['UserUsdcAta', 255]; },
+    getAddressEncoder: () => ({ encode: () => new Uint8Array(32) }),
     KaminoMarket: { load: async (rpc, market, slotMs) => { calls.push(['load', market, slotMs]); if (failLoad) throw new Error('rpc down'); return { getUserVanillaObligation: async wallet => { calls.push(['obligation', wallet]); return obligation; } }; } },
     KaminoAction: { buildWithdrawTxns: async props => { calls.push(['build', props.amount, props.reserveAddress, props.owner.address, props.useV2Ixs]); return { computeBudgetIxs: [{ k: 'cu' }], setupIxs: [{ k: 'ata' }, { k: 'refreshReserve' }, { k: 'refreshObligation' }], setupIxsLabels: ['CreateUserAta[x]', 'RefreshReserve[r]', 'RefreshObligation[o]'], lendingIxs: [{ k: 'withdraw' }], lendingIxsLabels: ['withdrawObligationCollateralAndRedeemReserveCollateralV2'], cleanupIxs: [], cleanupIxsLabels: [] }; } },
     resolveLedgerInstantForSlot: async (rpc, slot) => ({ slot, blockTime: 1_791_741_027n }),
@@ -31,12 +35,12 @@ function fakeSdk({ obligation = { obligationAddress: 'Dhs7xv1M' }, simulation = 
 test('builds an unsigned Kamino withdrawal for the wallet and simulates it without sending', async () => {
   const result = await simulateKaminoWithdraw({ wallet: WALLET, amountUsdc: 1663.85 }, { sdk: fakeSdk(), rpcUrl: 'https://rpc.example', now: () => 1_791_741_027_000 });
   assert.equal(result.status, 200);
-  assert.deepEqual(result.body, { ok: true, error: null, unitsConsumed: 112573, logCount: 38, instructions: ['CreateUserAta[x]', 'RefreshReserve[r]', 'RefreshObligation[o]', 'withdrawObligationCollateralAndRedeemReserveCollateralV2'], amountUsdc: 1663.85, observedAt: '2026-10-11T17:50:27.000Z', rpc: 'rpc.example', obligation: 'Dhs7xv1M' });
+  assert.deepEqual(result.body, { ok: true, error: null, unitsConsumed: 112573, logCount: 38, instructions: ['CreateUserAta[x]', 'RefreshReserve[r]', 'RefreshObligation[o]', 'withdrawObligationCollateralAndRedeemReserveCollateralV2'], amountUsdc: 1663.85, deliveredUsdc: 1663.85, observedAt: '2026-10-11T17:50:27.000Z', rpc: 'rpc.example', obligation: 'Dhs7xv1M' });
   assert.deepEqual(calls.find(c => c[0] === 'build'), ['build', '1663850000', USDC_RESERVE, WALLET, true]);
   assert.deepEqual(calls.find(c => c[0] === 'load').slice(1), [KAMINO_MAIN_MARKET, 450]);
   const sim = calls.find(c => c[0] === 'simulateTransaction');
   assert.equal(sim[1], 'WIRE:5');
-  assert.deepEqual(sim[2], { encoding: 'base64', sigVerify: false, replaceRecentBlockhash: true, commitment: 'processed' });
+  assert.deepEqual(sim[2], { encoding: 'base64', sigVerify: false, replaceRecentBlockhash: true, commitment: 'processed', accounts: { encoding: 'base64', addresses: ['UserUsdcAta'] } });
   assert.ok(!calls.some(c => /send/i.test(String(c[0])) && c[0] !== 'simulateTransaction'));
 });
 
@@ -75,4 +79,26 @@ test('a failure to load the SDK is a clean 502, never an unhandled exception', a
   assert.equal(result.status, 502);
   assert.equal(result.body.ok, false);
   assert.doesNotMatch(JSON.stringify(result.body), /Cannot find module/);
+});
+
+test('delivered USDC comes from the simulated token account, and a missing account before means a zero start', async () => {
+  const fresh = await simulateKaminoWithdraw({ wallet: WALLET, amountUsdc: 1663.85 }, { sdk: fakeSdk({ preBalance: null, simulation: { err: null, unitsConsumed: 1n, logs: [], accounts: [{ data: [tokenAccountData(1_663_850_000), 'base64'] }] } }) });
+  assert.equal(fresh.body.deliveredUsdc, 1663.85);
+  const capped = await simulateKaminoWithdraw({ wallet: WALLET, amountUsdc: 20000 }, { sdk: fakeSdk({ simulation: { err: null, unitsConsumed: 1n, logs: [], accounts: [{ data: [tokenAccountData(1_000_000 + 9_607_060_000), 'base64'] }] } }) });
+  assert.equal(capped.body.ok, true);
+  assert.equal(capped.body.deliveredUsdc, 9607.06, 'the simulation reports what would actually arrive, not the requested amount');
+  const noAccounts = await simulateKaminoWithdraw({ wallet: WALLET, amountUsdc: 5 }, { sdk: fakeSdk({ simulation: { err: null, unitsConsumed: 1n, logs: [], accounts: [null] } }) });
+  assert.equal(noAccounts.body.deliveredUsdc, null);
+});
+
+test('the Kamino market is cached for 30 seconds per RPC to spare the public endpoint', async () => {
+  const sdk = fakeSdk();
+  let clock = 1_000_000;
+  const now = () => clock;
+  await simulateKaminoWithdraw({ wallet: WALLET, amountUsdc: 1 }, { sdk, rpcUrl: 'https://cache.example', now });
+  await simulateKaminoWithdraw({ wallet: WALLET, amountUsdc: 1 }, { sdk, rpcUrl: 'https://cache.example', now });
+  assert.equal(calls.filter(c => c[0] === 'load').length, 1, 'second call within 30 s must reuse the market');
+  clock += 31_000;
+  await simulateKaminoWithdraw({ wallet: WALLET, amountUsdc: 1 }, { sdk, rpcUrl: 'https://cache.example', now });
+  assert.equal(calls.filter(c => c[0] === 'load').length, 2);
 });

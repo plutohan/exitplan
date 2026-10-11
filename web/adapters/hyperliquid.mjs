@@ -17,7 +17,8 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
   ]);
   const accountMode = typeof abstraction === 'string' ? abstraction : null;
   if (accountMode !== 'disabled' && accountMode !== 'default') {
-    throw new AdapterError('UNSUPPORTED_ACCOUNT_MODE', `Hyperliquid account mode "${accountMode ?? 'unknown'}" is not supported; only standard accounts (abstraction disabled or default) are modelled`);
+    const where = accountMode === 'unifiedAccount' || accountMode === 'portfolioMargin' ? 'unified and portfolio-margin accounts keep USDC in the spot balance, which this planner does not read' : 'this abstraction mode is not modelled';
+    throw new AdapterError('UNSUPPORTED_ACCOUNT_MODE', `Hyperliquid account mode "${accountMode ?? 'unknown'}" is not supported: ${where}. ExitPlan plans Standard accounts today (abstraction disabled or default); Unified is next`);
   }
   record(state, 'clearinghouseState');
   record(mids, 'allMids');
@@ -26,7 +27,7 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
   const withdrawable = decimal(state.withdrawable, 'withdrawable');
   if (!Array.isArray(state.assetPositions)) throw new AdapterError('INVALID_RESPONSE', 'assetPositions is missing');
   if (!Object.hasOwn(mids, 'SOL')) throw new AdapterError('INVALID_RESPONSE', 'SOL mid price is missing');
-  const markPrice = round2(decimal(mids.SOL, 'SOL mid'));
+  let markPrice = round2(decimal(mids.SOL, 'SOL mid'));
   if (markPrice <= 0) throw new AdapterError('INVALID_RESPONSE', 'SOL mid price must be positive');
 
   const positions = state.assetPositions.map((asset, index) => record(record(asset, `assetPositions[${index}]`).position, `assetPositions[${index}].position`));
@@ -39,6 +40,8 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
     const leverage = record(sol.leverage, 'SOL leverage');
     if (leverage.type !== 'cross') throw new AdapterError('ISOLATED_MARGIN', 'Isolated-margin SOL positions are not supported');
     shortSol = round6(-size);
+    // The exchange marks the position at positionValue / |size|; using it keeps the model's numbers equal to the exchange's own.
+    if (sol.positionValue != null && size !== 0) { const marked = round2(decimal(sol.positionValue, 'SOL position value') / Math.abs(size)); if (marked > 0) markPrice = marked; }
     solReport = {
       entryPrice: sol.entryPx == null ? null : decimal(sol.entryPx, 'SOL entry price'),
       liquidationPrice: sol.liquidationPx == null ? null : decimal(sol.liquidationPx, 'SOL liquidation price'),
