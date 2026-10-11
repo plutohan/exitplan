@@ -116,7 +116,7 @@ test('intent accepts an origin whose host matches x-forwarded-host on a proxied 
 ```
   - Rate-limit tests: `user: 'another-user'` → `ip: '198.51.100.9'`; the 1000-identity test uses `ip: \`10.0.${Math.floor(i / 256)}.${i % 256}\`` and `'overflow-user'` → `'192.0.2.1'`, `'user-0'` → `'10.0.0.0'`.
   - The 502 market test keeps `/unavailable/`; English message in app: `'Public market price is unavailable'`.
-  - In `tests/intent.test.mjs` and `tests/server.test.mjs` the mocked explanation `'조건 유지'` → `'Keep current conditions'`.
+  - In `tests/intent.test.mjs` and `tests/server.test.mjs` the mocked Korean explanation string → `'Keep current conditions'`.
 
 - [ ] **Step 2: Run** `node --test tests/server.test.mjs` → failing: 401 path, header names.
 
