@@ -28,6 +28,7 @@ const external = ({ hl = hlShort, kamino = kaminoFixture, jupiter = jupiterFixtu
   if (fail && target.host === fail) return new Response('down', { status: 500 });
   if (target.host === 'api.hyperliquid.xyz') { const type = JSON.parse(call.body).type; return json(type === 'allMids' ? { SOL: '109.695' } : type === 'userAbstraction' ? mode : hl); }
   if (target.host === 'solana-rpc.publicnode.com') return json({ jsonrpc: '2.0', id: 1, result: { context: { slot: 1 }, value: lamports } });
+  if (target.host === 'api.kamino.finance' && target.pathname.endsWith('/reserves/metrics')) return json([{ reserve: 'D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59', totalSupply: '120702201.4', totalBorrow: '112626977.24' }]);
   if (target.host === 'api.kamino.finance') return json(kamino);
   if (target.host === 'lite-api.jup.ag' && target.pathname.startsWith('/ultra/v1/balances/')) return json({ SOL: { uiAmount: 3.2196 }, EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v: { uiAmount: 336.4 } });
   if (target.host === 'lite-api.jup.ag') return json(jupiter);
@@ -514,7 +515,7 @@ test('import by address loads both venues, labels plans IMPORTED and uses the qu
   assert.match(ui.get('.demo-label').textContent, /Imported/);
   assert.match(ui.get('.demo-label').textContent, /No real transactions/);
   assert.equal(ui.get('#load-positions').disabled, false);
-  assert.equal(ui.calls.filter(call => EXTERNAL_HOSTS.includes(call.host)).length, 7); // balance, Kamino, quote, wallet balances, clearinghouse, mids, account mode
+  assert.equal(ui.calls.filter(call => EXTERNAL_HOSTS.includes(call.host)).length, 8); // balance, Kamino obligations, Kamino reserve metrics, quote, wallet balances, clearinghouse, mids, account mode
   assert.match(ui.get('#import-status').textContent, /\$336\.40 in wallet/);
   assertNoExecutionCalls(ui);
 });
@@ -582,17 +583,19 @@ test('imported rehearsal simulates the sell leg read-only and other steps are la
   assert.match(ui.get('#dialog-body').textContent, /Read-only rehearsal/);
   assert.match(ui.get('#dialog-body').textContent, /Nothing to simulate: USDC is already in the wallet/);
   await ui.click('#rehearsal-next'); // past the wallet step
+  assert.match(ui.get('#dialog-body').textContent, /Not simulated: a Hyperliquid order/);
+  await ui.click('#rehearsal-next'); // past the short reduction, which now comes before the sale
   assert.ok(ui.document.querySelector('#simulate-step'), 'sell step offers a read-only simulation');
   await ui.click('#simulate-step');
   for (let i = 0; i < 60 && /Simulating/.test(ui.get('#simulation-result').textContent); i++) await flush(); // three sequential network hops
   assert.match(ui.get('#simulation-result').textContent, /Simulation succeeded/);
   assert.match(ui.get('#simulation-result').textContent, /4,242/);
+  assert.match(ui.get('#simulation-result').textContent, /plan estimate \$/);
   const rpcMethods = ui.calls.filter(call => call.host === 'solana-rpc.publicnode.com').map(call => JSON.parse(call.body).method);
   assert.ok(rpcMethods.includes('simulateTransaction'));
   assert.ok(!rpcMethods.includes('sendTransaction'));
   await ui.click('#rehearsal-next');
   assert.equal(Boolean(ui.document.querySelector('#simulate-step')), false);
-  assert.match(ui.get('#dialog-body').textContent, /Not simulated/);
   assertNoExecutionCalls(ui);
 });
 
@@ -756,4 +759,30 @@ test('when no route fits, the banner offers concrete relaxations that work', asy
   assert.equal(ui.get('#preserve-sol').checked, false);
   assert.ok(ui.document.querySelector('.plan-card.selected'));
   assert.equal(ui.get('#rehearse').disabled, false);
+});
+
+test('imported positions show the exchange liquidation price and an estimate after the selected route', async t => {
+  const ui = await mount(t, { externalResponse: external() });
+  await importPositions(ui);
+  assert.match(ui.get('#position-cards').textContent, /HL · liquidation price/);
+  assert.match(ui.get('#position-cards').textContent, /267/);
+  await ui.input('#target', 500);
+  await ui.click('[data-plan="paired-unwind"]');
+  assert.match(ui.get('#position-cards').textContent, /estimate/);
+});
+
+test('Phantom connect fills both addresses read-only, and says so when Phantom is missing', async t => {
+  const ui = await mount(t, { externalResponse: external() });
+  await ui.click('#connect-phantom');
+  assert.match(ui.get('#toast').textContent, /Phantom not detected/);
+  ui.window.phantom = {
+    solana: { connect: async ({ onlyIfTrusted } = {}) => ({ publicKey: { toString: () => WALLET } }) },
+    ethereum: { request: async ({ method }) => (method === 'eth_requestAccounts' ? [HL_ADDRESS] : null) },
+  };
+  await ui.click('#connect-phantom');
+  await flush(); await flush();
+  assert.equal(ui.get('#solana-address').value, WALLET);
+  assert.equal(ui.get('#hl-address').value, HL_ADDRESS);
+  assert.match(ui.get('#import-status').textContent, /Loaded/);
+  assertNoExecutionCalls(ui);
 });

@@ -8,10 +8,12 @@ ExitPlan takes a **cash goal plus the limits you refuse to break** (new-debt cap
 
 ## What is real in this build
 
-- **Real positions by address, or a deep link.** Enter a Solana wallet and a Hyperliquid address (or open a `#sol=…&hl=…&target=…` link, or press *Load public example*). The browser reads them read-only from public APIs: SOL balance (publicnode RPC), Kamino main-market USDC deposits and borrows (Kamino API), the SOL short, equity, withdrawable and other positions on Hyperliquid (public info API), the HyperCore account mode (`userAbstraction`), USDC already sitting in the wallet (Jupiter balances, used first at zero fee), and a live Jupiter quote for SOL → USDC.
+- **Real positions by address, Phantom connect, or a deep link.** Enter a Solana wallet and a Hyperliquid address, press *Connect Phantom (read-only)* (it reads the Solana address and the Phantom Perps 0x address, never signs), open a `#sol=…&hl=…&target=…` link, or press *Load public example*. The browser reads them read-only from public APIs: SOL balance (publicnode RPC), Kamino main-market USDC deposits and borrows (Kamino API), the SOL short, equity, withdrawable and other positions on Hyperliquid (public info API), the HyperCore account mode (`userAbstraction`), USDC already sitting in the wallet (Jupiter balances, used first at zero fee), and a live Jupiter quote for SOL → USDC.
 - **Real transaction simulation.** In the rehearsal, the Solana sell leg builds an unsigned Jupiter swap for the entered wallet and runs Solana `simulateTransaction` (signature verification off, fresh blockhash). You see success or the exact error, compute units and the quoted output. The transaction is never sent.
-- **Deterministic route engine** with integer-cent arithmetic, fail-closed validation and 164 automated tests, including a 650-plan conservation grid.
+- **Deterministic route engine** with integer-cent arithmetic, fail-closed validation and 170 automated tests, including a 650-plan conservation grid.
 - **AI intent with confirmation.** Describe the goal in your own words; a server function turns it into a constraint proposal (OpenAI structured output, validated against a schema), and nothing applies until you confirm.
+- **Liquidation price before and after.** The exchange's own liquidation price is shown at load, and after a route an estimate anchored on that price (maintenance margin = 1 / (2 × max leverage)) shows where it would move. It is labelled an estimate.
+- **Kamino withdraw capacity capped by reserve liquidity** read from Kamino's reserve metrics at load.
 - **Public Hyperliquid market reference** (SOL perp mid) shown next to the planning price, never silently substituted.
 
 ## What is not real (yet)
@@ -21,7 +23,7 @@ ExitPlan takes a **cash goal plus the limits you refuse to break** (new-debt cap
 - Fees other than the Jupiter-quoted sale, the 10% margin reserve, durations and borrowing terms are model assumptions and are labelled as such in the app.
 - The Hyperliquid account mode is verified on HyperCore: standard accounts (abstraction `disabled` or `default`) are accepted; unified-account, portfolio-margin and DEX-abstraction accounts are rejected with the reason, because their perp state is not meaningful on its own. Margin used by other open positions is treated as locked.
 - Only Kamino obligations that hold USDC alone are supported; mixed-asset obligations and any existing borrow are rejected with a reason.
-- The 10% margin reserve mirrors Hyperliquid's 10%-of-notional withdrawal floor, not its maintenance margin; the liquidation price is read from the exchange but not re-modelled after a route.
+- The 10% margin reserve mirrors Hyperliquid's 10%-of-notional withdrawal floor, not its maintenance margin. The after-route liquidation price is a model estimate anchored on the exchange's number; other open positions and funding move the real one.
 - The minimum margin buffer only blocks routes that lower the Hyperliquid buffer; an account that already sits under the floor can still raise cash on Solana. On import, a floor above the current buffer is lowered to half the buffer and the app says so.
 - Ranking means lowest upfront fees among a bounded set of evaluated candidates (dozens, not all), not a global optimum or financial advice.
 
@@ -37,7 +39,7 @@ Requires Node.js 20+. The only dependency is LinkeDOM for DOM tests.
 
 ```sh
 npm ci --ignore-scripts
-npm test                       # 164 tests: engine, adapters, server, UI
+npm test                       # 170 tests: engine, adapters, server, UI
 npx vercel dev                 # serves web/ and the api/ functions
 ```
 

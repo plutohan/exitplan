@@ -331,3 +331,8 @@ test('USDC already in the wallet is used first, at zero fee, and counts toward t
   const missing = createDemoPortfolio(); delete missing.solana.wallet;
   assert.ok(run({}, missing).errors.some(error => /wallet/.test(error)));
 });
+
+test('paired routes list the leveraged short reduction before the spot sale', () => {
+  const paired = route(run({ target: 2000 }), 'paired-unwind');
+  assert.deepEqual(paired.steps.map(step => step.action), ['Reduce SOL short by the paired quantity', 'Sell SOL for USDC']);
+});

@@ -41,11 +41,12 @@ export async function quoteSolToUsdc(lamports, { fetchImpl = globalThis.fetch, t
 export async function importSolana(address, { fetchImpl = globalThis.fetch, now = Date.now, timeoutMs = 8000 } = {}) {
   if (!isSolanaAddress(address)) throw new AdapterError('INVALID_ADDRESS', 'Enter a Solana wallet address (base58, 32–44 characters)');
   const options = { fetchImpl, timeoutMs };
-  const [balance, obligations, { quote, outAmount }, balances] = await Promise.all([
+  const [balance, obligations, { quote, outAmount }, balances, reserves] = await Promise.all([
     rpc('getBalance', [address], options),
     requestJson(`${KAMINO_API_URL}/kamino-market/${KAMINO_MAIN_MARKET}/users/${address}/obligations`, options),
     quoteSolToUsdc(LAMPORTS_PER_SOL, options),
     requestJson(`${JUPITER_BALANCES_URL}/${address}`, options),
+    requestJson(`${KAMINO_API_URL}/kamino-market/${KAMINO_MAIN_MARKET}/reserves/metrics`, options),
   ]);
   record(balances, 'Jupiter balances');
   const usdcEntry = balances[USDC_MINT];
@@ -75,6 +76,11 @@ export async function importSolana(address, { fetchImpl = globalThis.fetch, now 
   }
   usdc = round2(usdc);
   debt = round2(debt);
+  if (!Array.isArray(reserves)) throw new AdapterError('INVALID_RESPONSE', 'Kamino reserve metrics must be an array');
+  const usdcReserve = reserves.find(entry => entry && entry.reserve === USDC_RESERVE);
+  if (!usdcReserve) throw new AdapterError('INVALID_RESPONSE', 'Kamino USDC reserve metrics are missing');
+  const liquidity = Math.max(0, round2(decimal(usdcReserve.totalSupply, 'USDC reserve supply') - decimal(usdcReserve.totalBorrow, 'USDC reserve borrows')));
+  const withdrawCapacity = Math.min(usdc, liquidity);
   const solPrice = round2(outAmount / 1e6);
   return {
     evidence: 'imported',
@@ -84,15 +90,15 @@ export async function importSolana(address, { fetchImpl = globalThis.fetch, now 
     state: {
       sol,
       solPrice,
-      lending: { usdc, debt, withdrawCapacity: usdc },
+      lending: { usdc, debt, withdrawCapacity },
       wallet: { usdc: walletUsdc },
       borrow: { enabled: true, capacity: round2(sol * solPrice * BORROW_LTV), maxLtv: BORROW_LTV },
     },
     quote: { outUsdcPerSol: outAmount / 1e6, priceImpactPct: String(quote.priceImpactPct ?? '0'), solSaleBps: solSaleBpsFromQuote(quote) },
     reported: { lamports, obligations: reports },
-    sources: ['publicnode RPC getBalance', 'Kamino main-market obligations API', 'Jupiter quote for 1 SOL → USDC', 'Jupiter wallet token balances (USDC in the wallet)'],
+    sources: ['publicnode RPC getBalance', 'Kamino main-market obligations API', 'Kamino reserve metrics (USDC liquidity)', 'Jupiter quote for 1 SOL → USDC', 'Jupiter wallet token balances (USDC in the wallet)'],
     assumptions: [
-      'Withdraw capacity equals supplied USDC; reserve utilisation is not checked',
+      `Withdraw capacity is capped by the USDC reserve liquidity at load ($${liquidity.toLocaleString('en-US', { maximumFractionDigits: 0 })} available)`,
       'Borrow capacity is 30% of SOL value, a model rule, not a Kamino quote',
       'SOL price is the Jupiter output for 1 SOL; larger sales are priced by the fee rule, not re-quoted',
     ],

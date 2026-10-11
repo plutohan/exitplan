@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { importHyperliquid, AdapterError } from '../web/adapters/hyperliquid.mjs';
+import { importHyperliquid, estimateLiquidationAfter, AdapterError } from '../web/adapters/hyperliquid.mjs';
 import { planExit, defaultConstraints, createDemoPortfolio } from '../web/engine.mjs';
 
 const fixture = async name => JSON.parse(await readFile(new URL(`./fixtures/${name}.json`, import.meta.url), 'utf8'));
@@ -110,4 +110,21 @@ test('verifies the account mode on HyperCore: standard accepted, abstraction mod
   const unset = await importHyperliquid(ADDR, { fetchImpl: fetchFor(state, { mode: 'default' }) });
   assert.equal(unset.reported.accountMode, 'default');
   assert.ok(unset.assumptions.some(line => /"default"/.test(line)));
+});
+
+test('reports the exchange liquidation price and max leverage', async () => {
+  const result = await importHyperliquid(ADDR, { fetchImpl: fetchFor(await fixture('hl-sol-short')) });
+  assert.ok(result.reported.liquidationPrice > result.state.markPrice, 'a short liquidates above the mark');
+  assert.equal(result.reported.maxLeverage, 20);
+});
+
+test('liquidation estimate is anchored on the exchange price and moves the right way', () => {
+  const base = { liquidationPrice: 267.04, markPrice: 111.9, shortSol: 91.32, maxLeverage: 20 };
+  assert.equal(estimateLiquidationAfter({ ...base, withdraw: 0, closeQty: 0, closeFee: 0 }), 267.04);
+  const afterWithdraw = estimateLiquidationAfter({ ...base, withdraw: 1000, closeQty: 0, closeFee: 0 });
+  assert.ok(afterWithdraw < 267.04 && afterWithdraw > base.markPrice, String(afterWithdraw));
+  const afterClose = estimateLiquidationAfter({ ...base, withdraw: 0, closeQty: 10, closeFee: 0.56 });
+  assert.ok(afterClose > 267.04, String(afterClose));
+  assert.equal(estimateLiquidationAfter({ ...base, withdraw: 0, closeQty: 91.32, closeFee: 0 }), null);
+  assert.equal(estimateLiquidationAfter({ ...base, liquidationPrice: null, withdraw: 0, closeQty: 0, closeFee: 0 }), null);
 });

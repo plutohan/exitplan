@@ -6,13 +6,18 @@ import { planExit, defaultConstraints, createDemoPortfolio } from '../web/engine
 
 const fixture = async name => JSON.parse(await readFile(new URL(`./fixtures/${name}.json`, import.meta.url), 'utf8'));
 const WALLET = 'DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK';
-const fetchFor = ({ lamports = 3_219_600_000, obligations, quote, rpcError = null, balances }) => async (url, init = {}) => {
+const DEFAULT_METRICS = [{ reserve: 'D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59', liquidityToken: 'USDC', totalSupply: '120702201.40143211682', totalBorrow: '112626977.24339373829' }];
+const fetchFor = ({ lamports = 3_219_600_000, obligations, quote, rpcError = null, balances, metrics = DEFAULT_METRICS }) => async (url, init = {}) => {
   const target = new URL(url);
   if (target.origin === 'https://solana-rpc.publicnode.com') {
     const body = JSON.parse(init.body);
     assert.equal(body.method, 'getBalance');
     assert.equal(body.params[0], WALLET);
     return Response.json(rpcError ? { jsonrpc: '2.0', id: 1, error: rpcError } : { jsonrpc: '2.0', id: 1, result: { context: { slot: 1 }, value: lamports } });
+  }
+  if (target.origin === 'https://api.kamino.finance' && target.pathname.endsWith('/reserves/metrics')) {
+    assert.equal(target.pathname, `/kamino-market/${KAMINO_MAIN_MARKET}/reserves/metrics`);
+    return Response.json(metrics);
   }
   if (target.origin === 'https://api.kamino.finance') {
     assert.equal(target.pathname, `/kamino-market/${KAMINO_MAIN_MARKET}/users/${WALLET}/obligations`);
@@ -110,4 +115,14 @@ test('wallet USDC comes from Jupiter balances and is zero when absent or malform
   assert.equal(none.state.wallet.usdc, 0);
   await assert.rejects(importSolana(WALLET, { fetchImpl: fetchFor({ ...data, balances: [] }) }), e => e.code === 'INVALID_RESPONSE');
   await assert.rejects(importSolana(WALLET, { fetchImpl: fetchFor({ ...data, balances: { EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v: { uiAmount: 'lots' } } }) }), e => e.code === 'INVALID_RESPONSE');
+});
+
+test('withdraw capacity is capped by the USDC reserve liquidity and fails closed without it', async () => {
+  const data = await loaded();
+  const capped = await importSolana(WALLET, { fetchImpl: fetchFor({ ...data, metrics: [{ reserve: USDC_RESERVE, totalSupply: '100', totalBorrow: '40' }] }) });
+  assert.equal(capped.state.lending.usdc, 9607.36);
+  assert.equal(capped.state.lending.withdrawCapacity, 60);
+  assert.ok(capped.assumptions.some(line => /reserve liquidity/i.test(line)));
+  await assert.rejects(importSolana(WALLET, { fetchImpl: fetchFor({ ...data, metrics: [] }) }), e => e.code === 'INVALID_RESPONSE');
+  await assert.rejects(importSolana(WALLET, { fetchImpl: fetchFor({ ...data, metrics: [{ reserve: USDC_RESERVE, totalSupply: 'x', totalBorrow: '1' }] }) }), e => e.code === 'INVALID_RESPONSE');
 });

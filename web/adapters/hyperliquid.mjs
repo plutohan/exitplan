@@ -32,7 +32,7 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
   const positions = state.assetPositions.map((asset, index) => record(record(asset, `assetPositions[${index}]`).position, `assetPositions[${index}].position`));
   const sol = positions.find(position => position.coin === 'SOL');
   let shortSol = 0;
-  let solReport = { entryPrice: null, liquidationPrice: null, leverage: null, solMarginUsed: 0 };
+  let solReport = { entryPrice: null, liquidationPrice: null, leverage: null, maxLeverage: null, solMarginUsed: 0 };
   if (sol) {
     const size = decimal(sol.szi, 'SOL size');
     if (size > 0) throw new AdapterError('UNSUPPORTED_POSITION', 'This account is long SOL; the planner models a SOL short hedge');
@@ -43,6 +43,7 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
       entryPrice: sol.entryPx == null ? null : decimal(sol.entryPx, 'SOL entry price'),
       liquidationPrice: sol.liquidationPx == null ? null : decimal(sol.liquidationPx, 'SOL liquidation price'),
       leverage: decimal(leverage.value, 'SOL leverage'),
+      maxLeverage: Number.isFinite(Number(sol.maxLeverage)) && Number(sol.maxLeverage) > 0 ? Number(sol.maxLeverage) : null,
       solMarginUsed: decimal(sol.marginUsed, 'SOL margin used'),
     };
   }
@@ -76,4 +77,22 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
     reported: { accountMode, accountValue, withdrawable, marginUsed: decimal(summary.totalMarginUsed ?? 0, 'totalMarginUsed'), ...solReport, otherPositions },
     assumptions,
   };
+}
+
+/**
+ * Liquidation price after a route, anchored on the exchange's own liquidation price at load.
+ * Model: equity above maintenance at the current mark is (liq − mark)·S·(1+mmr) for a short of S SOL,
+ * with mmr = 1 / (2 × max leverage). Withdrawing W and paying fees lower it; closing q SOL frees mmr·q·mark.
+ * This is an estimate; the exchange recomputes after execution and other positions move the real number.
+ */
+export function estimateLiquidationAfter({ liquidationPrice, markPrice, shortSol, maxLeverage, withdraw = 0, closeQty = 0, closeFee = 0 }) {
+  const values = [liquidationPrice, markPrice, shortSol, maxLeverage, withdraw, closeQty, closeFee];
+  if (values.some(value => typeof value !== 'number' || !Number.isFinite(value))) return null;
+  if (maxLeverage <= 0 || markPrice <= 0) return null;
+  const remaining = shortSol - closeQty;
+  if (remaining <= 1e-9) return null;
+  const mmr = 1 / (2 * maxLeverage);
+  const available = (liquidationPrice - markPrice) * shortSol * (1 + mmr);
+  const availableAfter = available - withdraw - closeFee + mmr * closeQty * markPrice;
+  return round2(markPrice + availableAfter / (remaining * (1 + mmr)));
 }

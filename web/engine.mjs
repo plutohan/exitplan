@@ -163,8 +163,8 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
     const step = (venue, action, amount, unit) => steps.push({ venue, action, amount, unit });
     if (a.wallet) step('Solana wallet', 'Use USDC already in the wallet', dollars(a.wallet), 'USDC');
     if (a.lending) step('Solana lending (fixture)', 'Withdraw lending USDC', dollars(a.lending), 'USDC');
+    if (a.closed) step('Hyperliquid (fixture)', 'Reduce SOL short by the paired quantity', quantity(a.closed), 'SOL'); // leveraged leg first
     if (a.sold) step('Solana (fixture)', 'Sell SOL for USDC', quantity(a.sold), 'SOL');
-    if (a.closed) step('Hyperliquid (fixture)', 'Reduce SOL short by the paired quantity', quantity(a.closed), 'SOL');
     if (a.borrowed) step('Solana lending (comparison only)', 'Borrow USDC against retained SOL', dollars(a.borrowed), 'USDC');
     if (a.hl) step('Hyperliquid → Solana (fixture)', 'Withdraw and transfer USDC collateral', dollars(a.hl), 'USDC');
     const estimatedHours = Number(((a.lending ? t.lendingWithdrawHours : 0) + (a.sold || a.closed ? t.tradeHours : 0)
