@@ -13,6 +13,7 @@ const fetchFor = (state, options = {}) => async (url, init) => {
   if (body.type === 'allMids') return Response.json(options.mids ?? mids);
   if (body.type === 'userAbstraction') { assert.equal(body.user, ADDR); return Response.json(options.mode ?? 'disabled'); }
   if (body.type === 'vaultDetails') { assert.equal(body.vaultAddress, ADDR); return Response.json(options.vault ?? null); }
+  if (body.type === 'spotClearinghouseState') { assert.equal(body.user, ADDR); return Response.json(options.spot ?? { balances: [] }); }
   if (body.type === 'clearinghouseState') { assert.equal(body.user, ADDR); return Response.json(state); }
   assert.fail('unexpected request ' + init.body);
 };
@@ -102,7 +103,7 @@ test('equity above the reserve but below locked margin still rejects with LEVERA
 
 test('verifies the account mode on HyperCore: standard accepted, abstraction modes rejected', async () => {
   const state = await fixture('hl-sol-short');
-  for (const mode of ['portfolioMargin', 'unifiedAccount', 'dexAbstraction', 'somethingNew', 42]) {
+  for (const mode of ['portfolioMargin', 'dexAbstraction', 'somethingNew', 42]) {
     await assert.rejects(importHyperliquid(ADDR, { fetchImpl: fetchFor(state, { mode }) }), e => e instanceof AdapterError && e.code === 'UNSUPPORTED_ACCOUNT_MODE');
   }
   const standard = await importHyperliquid(ADDR, { fetchImpl: fetchFor(state, { mode: 'disabled' }) });
@@ -131,11 +132,29 @@ test('liquidation estimate is anchored on the exchange price and moves the right
   assert.equal(estimateLiquidationAfter({ ...base, liquidationPrice: null, withdraw: 0, closeQty: 0, closeFee: 0 }), null);
 });
 
-test('unified and portfolio-margin rejections explain where the USDC sits and what works today', async () => {
+test('portfolio-margin rejections explain what is modelled', async () => {
   const state = await fixture('hl-sol-short');
-  for (const mode of ['unifiedAccount', 'portfolioMargin']) {
-    await assert.rejects(importHyperliquid(ADDR, { fetchImpl: fetchFor(state, { mode }) }), e => e.code === 'UNSUPPORTED_ACCOUNT_MODE' && /spot balance/.test(e.message) && /Standard accounts today/.test(e.message));
-  }
+  await assert.rejects(importHyperliquid(ADDR, { fetchImpl: fetchFor(state, { mode: 'portfolioMargin' }) }), e => e.code === 'UNSUPPORTED_ACCOUNT_MODE' && /portfolio margin/i.test(e.message) && /Standard and Unified/.test(e.message));
+});
+
+test('a unified account imports with the spot USDC balance backing the perps', async () => {
+  const perps = await fixture('hl-unified-perps');
+  const spot = await fixture('hl-unified-spot');
+  const result = await importHyperliquid(ADDR, { fetchImpl: fetchFor(perps, { mode: 'unifiedAccount', spot }) });
+  assert.equal(result.reported.accountMode, 'unifiedAccount');
+  const usdc = spot.balances.find(b => b.coin === 'USDC');
+  const freeSpot = Number(usdc.total) - Number(usdc.hold);
+  const sol = perps.assetPositions.find(a => a.position.coin === 'SOL').position;
+  const locked = perps.assetPositions.filter(a => a.position.coin !== 'SOL').reduce((sum, a) => sum + Number(a.position.marginUsed), 0);
+  const equity = freeSpot + Number(perps.marginSummary.accountValue);
+  assert.equal(result.state.collateral, Math.round((equity - locked) * 100) / 100);
+  assert.equal(result.state.shortSol, Math.round(-Number(sol.szi) * 1e6) / 1e6);
+  assert.equal(result.reported.withdrawable, Math.round((freeSpot + Number(perps.withdrawable)) * 100) / 100);
+  assert.ok(result.state.freeWithdrawable <= result.reported.withdrawable + 0.01);
+  assert.ok(result.assumptions.some(line => /Unified account/.test(line)), result.assumptions.join(' | '));
+  assert.deepEqual(result.reported.spotUsdc, { total: Number(usdc.total), hold: Number(usdc.hold) });
+  const noUsdc = await importHyperliquid(ADDR, { fetchImpl: fetchFor(perps, { mode: 'unifiedAccount', spot: { balances: [] } }) });
+  assert.equal(noUsdc.reported.spotUsdc.total, 0);
 });
 
 test('a Hyperliquid vault address is rejected as not a user account', async () => {

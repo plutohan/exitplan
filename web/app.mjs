@@ -851,6 +851,7 @@ function renderPreflight() {
   const items = [];
   const push = (status, label, detail) => items.push({ status, label, detail });
   if (hl.reported.accountMode === 'disabled') push('ok', 'Account mode', 'verified on HyperCore: standard (abstraction disabled)');
+  else if (hl.reported.accountMode === 'unifiedAccount') push('ok', 'Account mode', `verified on HyperCore: unified account (spot USDC ${money(hl.reported.spotUsdc.total, true)} backs the perps, ${money(hl.reported.spotUsdc.hold, true)} held)`);
   else push('warn', 'Account mode', 'reported as default on HyperCore; treated as standard, not proven');
   const exposure = portfolio.solana.sol - portfolio.hyperliquid.shortSol;
   if (Math.abs(exposure) < 0.000001) push('ok', 'Net exposure', '0 SOL: spot and short balanced');

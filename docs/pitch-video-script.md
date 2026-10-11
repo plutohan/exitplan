@@ -26,7 +26,7 @@ Record with Loom or screen + webcam. Hook first, bio second. Show the live site 
 "Who: Phantom Perps and Hyperliquid traders holding SOL on Solana, and funding farmers running delta-neutral books. Free planner. Revenue from what comes after a plan: a Hyperliquid builder code on the short leg, a Jupiter integrator fee on the Solana leg, and a watch tier that alerts when a plan stops being feasible or liquidation gets close. Then automatic rebalancing of self-custodied delta-neutral positions, which is where the recurring volume is."
 
 **2:25 – 2:45 · What is real, what is next**
-"Read-only today, by design: real positions, a verified account mode, exchange-matching margin math, two real Solana simulations. Standard Hyperliquid accounts now, Unified next. Then one-click execution: Phantom signs the Solana leg, a Hyperliquid builder code routes the short, CCTP brings the USDC home. Everything is MIT, and the route engine is a pure module anyone can import."
+"Read-only today, by design: real positions, a verified account mode, exchange-matching margin math, two real Solana simulations. Standard and Unified Hyperliquid accounts. Then one-click execution: Phantom signs the Solana leg, a Hyperliquid builder code routes the short, CCTP brings the USDC home. Everything is MIT, and the route engine is a pure module anyone can import."
 
 **2:45 – 2:55 · Close**
 "ExitPlan: the pre-flight check before you unwind. Link in the submission. Thanks."

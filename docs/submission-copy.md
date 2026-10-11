@@ -15,7 +15,7 @@ ExitPlan is a read-only pre-flight check for the most common cross-chain positio
 - Exit liquidity is not guaranteed: Kamino's main-market USDC reserve was 93.2% utilized ($112.5M borrowed of $120.7M), leaving about $8.2M withdrawable (Kamino API).
 - Third-party estimate: Phantom Perps has routed tens of billions of dollars of Hyperliquid volume since July 2025 (DefiLlama lists more than $50B cumulative).
 
-**Wedge:** A read-only pre-flight for the most common hedged structure (SOL spot + wallet/Kamino USDC + Hyperliquid SOL short) on Standard Hyperliquid accounts, with explanations and real Solana simulations, before any execution product. Unified accounts are next.
+**Wedge:** A read-only pre-flight for the most common hedged structure (SOL spot + wallet/Kamino USDC + Hyperliquid SOL short) on Standard and Unified Hyperliquid accounts, with explanations and real Solana simulations, before any execution product.
 
 **Target user:** Phantom Perps and Hyperliquid traders holding SOL on Solana; delta-neutral funding farmers.
 

@@ -10,25 +10,34 @@ const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 export async function importHyperliquid(address, { fetchImpl = globalThis.fetch, now = Date.now, timeoutMs = 8000 } = {}) {
   if (typeof address !== 'string' || !ADDRESS.test(address)) throw new AdapterError('INVALID_ADDRESS', 'Enter a Hyperliquid address: 0x followed by 40 hex characters');
   const options = { method: 'POST', fetchImpl, timeoutMs };
-  const [state, mids, abstraction, vault] = await Promise.all([
+  const [state, mids, abstraction, vault, spot] = await Promise.all([
     requestJson(HL_INFO_URL, { ...options, body: { type: 'clearinghouseState', user: address } }),
     requestJson(HL_INFO_URL, { ...options, body: { type: 'allMids' } }),
     requestJson(HL_INFO_URL, { ...options, body: { type: 'userAbstraction', user: address } }),
     requestJson(HL_INFO_URL, { ...options, body: { type: 'vaultDetails', vaultAddress: address } }),
+    requestJson(HL_INFO_URL, { ...options, body: { type: 'spotClearinghouseState', user: address } }),
   ]);
   if (vault && typeof vault === 'object') {
     throw new AdapterError('VAULT_ADDRESS', `This address is a Hyperliquid vault (${String(vault.name ?? 'unnamed')}), not a user account; enter the address that holds your positions`);
   }
   const accountMode = typeof abstraction === 'string' ? abstraction : null;
-  if (accountMode !== 'disabled' && accountMode !== 'default') {
-    const where = accountMode === 'unifiedAccount' || accountMode === 'portfolioMargin' ? 'unified and portfolio-margin accounts keep USDC in the spot balance, which this planner does not read' : 'this abstraction mode is not modelled';
-    throw new AdapterError('UNSUPPORTED_ACCOUNT_MODE', `Hyperliquid account mode "${accountMode ?? 'unknown'}" is not supported: ${where}. ExitPlan plans Standard accounts today (abstraction disabled or default); Unified is next`);
+  const unified = accountMode === 'unifiedAccount';
+  if (accountMode !== 'disabled' && accountMode !== 'default' && !unified) {
+    const where = accountMode === 'portfolioMargin' ? 'portfolio margin pools several collateral assets, which this planner does not model' : 'this abstraction mode is not modelled';
+    throw new AdapterError('UNSUPPORTED_ACCOUNT_MODE', `Hyperliquid account mode "${accountMode ?? 'unknown'}" is not supported: ${where}. Standard and Unified accounts are supported`);
   }
   record(state, 'clearinghouseState');
   record(mids, 'allMids');
   const summary = record(state.marginSummary, 'marginSummary');
-  const accountValue = decimal(summary.accountValue, 'accountValue');
-  const withdrawable = decimal(state.withdrawable, 'withdrawable');
+  const perpsAccountValue = decimal(summary.accountValue, 'accountValue');
+  const perpsWithdrawable = decimal(state.withdrawable, 'withdrawable');
+  // Spot USDC: separate from perps on a standard account; backs the perps on a unified account (hold = margin in use).
+  const spotBalances = spot && Array.isArray(spot.balances) ? spot.balances : [];
+  const usdcEntry = spotBalances.find((b) => b && b.coin === 'USDC');
+  const spotUsdc = { total: usdcEntry ? decimal(usdcEntry.total, 'spot USDC total') : 0, hold: usdcEntry ? decimal(usdcEntry.hold ?? 0, 'spot USDC hold') : 0 };
+  const freeSpotUsdc = Math.max(0, spotUsdc.total - spotUsdc.hold);
+  const accountValue = unified ? freeSpotUsdc + perpsAccountValue : perpsAccountValue;
+  const withdrawable = unified ? round2(freeSpotUsdc + perpsWithdrawable) : perpsWithdrawable;
   if (!Array.isArray(state.assetPositions)) throw new AdapterError('INVALID_RESPONSE', 'assetPositions is missing');
   if (!Object.hasOwn(mids, 'SOL')) throw new AdapterError('INVALID_RESPONSE', 'SOL mid price is missing');
   let markPrice = round2(decimal(mids.SOL, 'SOL mid'));
@@ -69,7 +78,9 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
   const modelHeadroom = (collateralCents - required) / 100;
   const freeWithdrawable = Math.max(0, Math.min(round2(withdrawable), modelHeadroom));
   const assumptions = [
-    accountMode === 'disabled' ? 'Account mode verified on HyperCore: standard (abstraction disabled)' : 'Account mode reported as "default" on HyperCore (no abstraction chosen); treated as a standard account',
+    unified
+      ? 'Unified account verified on HyperCore: the spot USDC balance backs the perps; equity = free spot USDC + perps equity, and USDC held for other positions is treated as locked'
+      : accountMode === 'disabled' ? 'Account mode verified on HyperCore: standard (abstraction disabled)' : 'Account mode reported as "default" on HyperCore (no abstraction chosen); treated as a standard account',
     'Reserve is 10% of short notional, a model assumption, not the exchange maintenance margin',
     'Margin used by other open positions is treated as locked and deducted from equity',
   ];
@@ -81,7 +92,7 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
     observedAt: new Date(now()).toISOString(),
     source: 'Hyperliquid public info API',
     state: { accountMode: 'standard', marginMode: 'cross', asset: 'SOL', shortSol, markPrice, collateral, conservativeMarginRate: HL_RESERVE_RATE, freeWithdrawable },
-    reported: { accountMode, accountValue, withdrawable, marginUsed: decimal(summary.totalMarginUsed ?? 0, 'totalMarginUsed'), ...solReport, otherPositions },
+    reported: { accountMode, accountValue, withdrawable, spotUsdc, marginUsed: decimal(summary.totalMarginUsed ?? 0, 'totalMarginUsed'), ...solReport, otherPositions },
     assumptions,
   };
 }

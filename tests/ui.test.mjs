@@ -18,15 +18,17 @@ const json = (body, status = 200) => Response.json(body, { status });
 const loadFixture = async name => JSON.parse(await readFile(new URL(`./fixtures/${name}.json`, import.meta.url), 'utf8'));
 const hlShort = await loadFixture('hl-sol-short');
 const hlNoPosition = await loadFixture('hl-no-position');
+const hlUnifiedPerps = await loadFixture('hl-unified-perps');
+const hlUnifiedSpot = await loadFixture('hl-unified-spot');
 const kaminoFixture = await loadFixture('kamino-obligations');
 const jupiterFixture = await loadFixture('jupiter-quote');
 const WALLET = 'DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK';
 const HL_ADDRESS = '0x3de9a354243a94e10060a198c7179b8e5393b9a1';
 const EXTERNAL_HOSTS = ['api.hyperliquid.xyz', 'solana-rpc.publicnode.com', 'api.kamino.finance', 'lite-api.jup.ag'];
-const external = ({ hl = hlShort, kamino = kaminoFixture, jupiter = jupiterFixture, lamports = 3_219_600_000, fail = null, mode = 'disabled' } = {}) => async call => {
+const external = ({ hl = hlShort, kamino = kaminoFixture, jupiter = jupiterFixture, lamports = 3_219_600_000, fail = null, mode = 'disabled', spot = { balances: [] } } = {}) => async call => {
   const target = new URL(call.url);
   if (fail && target.host === fail) return new Response('down', { status: 500 });
-  if (target.host === 'api.hyperliquid.xyz') { const type = JSON.parse(call.body).type; return json(type === 'allMids' ? { SOL: '109.695' } : type === 'userAbstraction' ? mode : type === 'vaultDetails' ? null : hl); }
+  if (target.host === 'api.hyperliquid.xyz') { const type = JSON.parse(call.body).type; return json(type === 'allMids' ? { SOL: '109.695' } : type === 'userAbstraction' ? mode : type === 'vaultDetails' ? null : type === 'spotClearinghouseState' ? spot : hl); }
   if (target.host === 'solana-rpc.publicnode.com') return json({ jsonrpc: '2.0', id: 1, result: { context: { slot: 1 }, value: lamports } });
   if (target.host === 'api.kamino.finance' && target.pathname.endsWith('/reserves/metrics')) return json([{ reserve: 'D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59', totalSupply: '120702201.4', totalBorrow: '112626977.24' }]);
   if (target.host === 'api.kamino.finance') return json(kamino);
@@ -516,7 +518,7 @@ test('import by address loads both venues, labels plans IMPORTED and uses the qu
   assert.match(ui.get('.demo-label').textContent, /Imported/);
   assert.match(ui.get('.demo-label').textContent, /No real transactions/);
   assert.equal(ui.get('#load-positions').disabled, false);
-  assert.equal(ui.calls.filter(call => EXTERNAL_HOSTS.includes(call.host)).length, 9); // balance, Kamino obligations, Kamino reserve metrics, quote, wallet balances, clearinghouse, mids, account mode, vault check
+  assert.equal(ui.calls.filter(call => EXTERNAL_HOSTS.includes(call.host)).length, 10); // balance, Kamino obligations, Kamino reserve metrics, quote, wallet balances, clearinghouse, mids, account mode, vault check, spot balances
   assert.match(ui.get('#import-status').textContent, /\$336\.40 in wallet/);
   assertNoExecutionCalls(ui);
 });
@@ -961,4 +963,14 @@ test('the pre-flight readout warns when the HL buffer is under the floor and whe
   assert.match(text('HL margin buffer').textContent, /under your \$1,500 floor/);
   assert.ok(text('Account mode').classList.contains('warn'), 'default mode is a warning, not a pass');
   assert.match(text('Account mode').textContent, /default/);
+});
+
+test('a unified Hyperliquid account imports and the pre-flight readout says so', async t => {
+  const ui = await mount(t, { externalResponse: external({ hl: hlUnifiedPerps, mode: 'unifiedAccount', spot: hlUnifiedSpot }) });
+  await importPositions(ui);
+  assert.match(ui.get('#import-status').textContent, /Loaded/);
+  const item = [...ui.document.querySelectorAll('#preflight-items li')].find(li => /Account mode/.test(li.textContent));
+  assert.ok(item.classList.contains('ok'));
+  assert.match(item.textContent, /unified/i);
+  assert.match(item.textContent, /spot USDC/);
 });
