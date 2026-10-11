@@ -40,3 +40,4 @@ body{font-size:14px}.eyebrow{font-size:10px}.workspace-label{font-size:10px}.nav
 .report-button{margin-left:auto;font-size:11px;padding:4px 10px}
 .report-text{width:100%;min-height:280px;box-sizing:border-box;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:#0f130e;color:#dfe7da;border:1px solid #2a3327;border-radius:6px;padding:10px;resize:vertical;white-space:pre;overflow:auto}
 @media (max-width:720px){.report-button{margin-left:0;width:100%}}
+.order-preview{font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:#0f130e;color:#cfd8c9;border:1px solid #2a3327;border-radius:6px;padding:8px;white-space:pre-wrap;word-break:break-all;margin:6px 0 0}

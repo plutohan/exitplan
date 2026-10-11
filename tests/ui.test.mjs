@@ -597,6 +597,13 @@ test('imported rehearsal simulates the sell leg read-only and other steps are la
   assert.match(ui.get('#simulation-result').textContent, /average \$111\.09/);
   assert.match(ui.get('#simulation-result').textContent, /taker fee/);
   assert.match(ui.get('#simulation-result').textContent, /no order placed/);
+  assert.match(ui.get('#simulation-result').textContent, /cost vs plan/);
+  assert.match(ui.get('#simulation-result').textContent, /book age/);
+  const order = ui.get('#order-preview').textContent;
+  assert.match(order, /"a":5/);
+  assert.match(order, /"r":true/);
+  assert.match(order, /"tif":"Ioc"/);
+  assert.match(order, /unsigned/i);
   assert.ok(!ui.calls.some(call => call.host === 'api.hyperliquid.xyz' && /\/exchange/.test(call.url)), 'the preview never touches the exchange endpoint');
   await ui.click('#rehearsal-next'); // past the short reduction, which now comes before the sale
   assert.ok(ui.document.querySelector('#simulate-step'), 'sell step offers a read-only simulation');

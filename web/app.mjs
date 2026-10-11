@@ -592,7 +592,7 @@ const simulatable = (step) => step.action.startsWith('Sell SOL') || step.action.
 function bookPreviewText(result) {
   const rate = imported?.hyperliquid?.reported?.fees?.takerRate;
   const fee = rate == null || result.averagePrice == null ? null : result.filled * result.averagePrice * rate;
-  return `Book preview · buying back ${num(result.filled)} SOL walks ${result.levelsUsed} level${result.levelsUsed === 1 ? '' : 's'} to an average ${money(result.averagePrice ?? 0, true)} (${result.slippageBps ?? 0} bps above best ask ${money(result.bestAsk, true)}; plan mark ${money(portfolio.hyperliquid.markPrice, true)}) · est. taker fee ${fee == null ? 'unknown' : money(fee, true)}${rate == null ? '' : ` at ${(rate * 10_000).toFixed(3)} bps`}${result.partial ? ` · only ${num(result.visibleDepth)} SOL visible in the top ${result.levelsUsed} levels; the rest is beyond the visible book` : ''} · no order placed`;
+  return `Book preview · buying back ${num(result.filled)} SOL walks ${result.levelsUsed} level${result.levelsUsed === 1 ? '' : 's'} to an average ${money(result.averagePrice ?? 0, true)} (${result.slippageBps ?? 0} bps above best ask ${money(result.bestAsk, true)}; plan mark ${money(portfolio.hyperliquid.markPrice, true)}) · est. taker fee ${fee == null ? 'unknown' : money(fee, true)}${rate == null ? '' : ` at ${(rate * 10_000).toFixed(3)} bps`}${result.costVsPlan != null ? ` · buy-back cost vs plan ${result.costVsPlan >= 0 ? '+' : '−'}${money(Math.abs(result.costVsPlan), true)} (${result.slippageVsMarkBps} bps vs mark)` : ''}${result.bookAgeSeconds != null ? ` · book age ${result.bookAgeSeconds}s${result.stale ? ' (stale, run again)' : ''}` : ''}${result.partial ? ` · only ${num(result.visibleDepth)} SOL visible in the top ${result.levelsUsed} levels; the rest is beyond the visible book` : ''} · no order placed`;
 }
 const kaminoShortfall = (result, step) => result.deliveredUsdc != null && result.deliveredUsdc < step.amount - 0.01;
 function simulationBlock(step) {
@@ -615,7 +615,7 @@ function simulationBlock(step) {
               : `Simulation succeeded · ${num(sim.result.unitsConsumed ?? 0)} CU · ${sim.result.deliveredUsdc != null ? `would deliver ${money(sim.result.deliveredUsdc, true)} (plan ${money(step.amount, true)}) · ` : ''}${sim.result.instructions.length} instructions: ${sim.result.instructions.map((label) => label.replace(/\[.*$/, '')).join(', ')} · ${sim.result.logCount} log lines · nothing was sent`
             : `Simulation succeeded · ${num(sim.result.unitsConsumed ?? 0)} CU · quoted ${money(sim.result.quotedUsdc, true)} USDC vs plan estimate ${money(step.amount * portfolio.solana.solPrice * (1 - portfolio.fees.solSaleBps / 10000), true)} · ${sim.result.logCount} log lines · nothing was sent`
           : `Simulation failed: ${sim.result.error}`;
-  return `<div class="simulation"><button id="simulate-step" class="secondary-button" type="button" ${sim?.pending ? 'disabled' : ''}>${hlPreview ? 'Preview fill on the Hyperliquid book (read-only)' : kamino ? 'Simulate Kamino withdrawal (read-only)' : 'Simulate on Solana (read-only)'}</button><p id="simulation-result" class="simulation-note ${sim && !sim.pending && (sim.error || !sim.result.ok || (kamino && kaminoShortfall(sim.result, step)) || (hlPreview && sim.result.partial)) ? 'error' : ''}">${esc(text)}</p></div>`;
+  return `<div class="simulation"><button id="simulate-step" class="secondary-button" type="button" ${sim?.pending ? 'disabled' : ''}>${hlPreview ? 'Preview fill on the Hyperliquid book (read-only)' : kamino ? 'Simulate Kamino withdrawal (read-only)' : 'Simulate on Solana (read-only)'}</button><p id="simulation-result" class="simulation-note ${sim && !sim.pending && (sim.error || !sim.result.ok || (kamino && kaminoShortfall(sim.result, step)) || (hlPreview && sim.result.partial)) ? 'error' : ''}">${esc(text)}</p>${hlPreview && sim?.result?.order ? `<pre id="order-preview" class="order-preview">Unsigned reduce-only IOC order you would sign (limit = worst walked level + ${sim.result.slippageCapBps / 100}% cap, tick-rounded; never sent): ${esc(JSON.stringify(sim.result.order))}</pre>` : ''}</div>`;
 }
 async function runSimulation() {
   if (!rehearsal || !imported) return;
@@ -626,7 +626,7 @@ async function runSimulation() {
   renderRehearsal();
   try {
     const result = step.action.startsWith('Reduce SOL short')
-      ? await previewReduceShort({ quantity: step.amount })
+      ? await previewReduceShort({ quantity: step.amount, assetIndex: imported.hyperliquid.reported.assetIndex, szDecimals: imported.hyperliquid.reported.szDecimals ?? 2, markPrice: portfolio.hyperliquid.markPrice })
       : step.action.startsWith('Withdraw lending')
         ? await simulateKaminoWithdraw({ address: imported.solana.address, amountUsdc: step.amount })
         : await simulateSellSol({ address: imported.solana.address, solAmount: step.amount });

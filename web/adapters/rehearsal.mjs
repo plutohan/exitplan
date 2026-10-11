@@ -7,28 +7,47 @@ export const JUPITER_SWAP_URL = 'https://lite-api.jup.ag/swap/v1/swap';
 export const HL_INFO_URL = 'https://api.hyperliquid.xyz/info';
 
 /** Read-only preview of buying back SOL to reduce the short: walks the live asks of the public order book. Never places an order. */
-export async function previewReduceShort({ quantity, fetchImpl = globalThis.fetch, timeoutMs = 8000 }) {
+/** Hyperliquid price rule for perps: at most 5 significant figures and at most (6 − szDecimals) decimals; rounded up for a buy so an IOC can fill. */
+export function tickRoundUp(px, szDecimals) {
+  const maxDecimals = Math.max(0, 6 - szDecimals);
+  const decimals = Math.max(0, Math.min(maxDecimals, 4 - Math.floor(Math.log10(px))));
+  const factor = 10 ** decimals;
+  return { price: Math.ceil(px * factor - 1e-9) / factor, decimals };
+}
+
+export async function previewReduceShort({ quantity, assetIndex = null, szDecimals = 2, markPrice = null, slippageCapBps = 50, fetchImpl = globalThis.fetch, now = Date.now, timeoutMs = 8000 }) {
   if (!Number.isFinite(quantity) || quantity <= 0) throw new AdapterError('INVALID_AMOUNT', 'Quantity must be a positive number of SOL');
+  const sizeFactor = 10 ** szDecimals;
+  const size = Math.floor(quantity * sizeFactor + 1e-9) / sizeFactor; // what the exchange would accept
+  if (size <= 0) throw new AdapterError('INVALID_AMOUNT', `Quantity is below one lot of ${1 / sizeFactor} SOL`);
   const book = record(await requestJson(HL_INFO_URL, { method: 'POST', fetchImpl, timeoutMs, body: { type: 'l2Book', coin: 'SOL' } }), 'l2Book');
   if (!Array.isArray(book.levels) || book.levels.length < 2 || !Array.isArray(book.levels[0]) || !Array.isArray(book.levels[1])) throw new AdapterError('INVALID_RESPONSE', 'l2Book levels are missing');
   const level = (entry, label) => ({ px: decimal(entry?.px, `${label} price`), sz: decimal(entry?.sz, `${label} size`) });
   const bids = book.levels[0].map((entry, i) => level(entry, `bid ${i}`));
   const asks = book.levels[1].map((entry, i) => level(entry, `ask ${i}`));
   if (!asks.length || !bids.length) throw new AdapterError('INVALID_RESPONSE', 'The SOL order book is empty');
-  let remaining = quantity, cost = 0, levelsUsed = 0;
+  let remaining = size, cost = 0, levelsUsed = 0, worstPrice = asks[0].px;
   for (const { px, sz } of asks) {
     const take = Math.min(remaining, sz);
-    cost += take * px; remaining -= take; levelsUsed += 1;
+    cost += take * px; remaining -= take; levelsUsed += 1; worstPrice = px;
     if (remaining <= 1e-9) { remaining = 0; break; }
   }
-  const filled = round6(quantity - remaining);
+  const filled = round6(size - remaining);
   const averagePrice = filled > 0 ? Math.round((cost / filled) * 10_000) / 10_000 : null;
   const bestAsk = asks[0].px, bestBid = bids[0].px;
+  const { price: limitPrice, decimals } = tickRoundUp(worstPrice * (1 + slippageCapBps / 10_000), szDecimals);
+  const bookTime = Number(book.time) || null;
+  const bookAgeSeconds = bookTime ? Math.max(0, Math.round((now() - bookTime) / 1000)) : null;
+  // The order the user would sign, in the exchange's own wire shape: buy, reduce-only, immediate-or-cancel. Built, never sent.
+  const order = Number.isInteger(assetIndex) && assetIndex >= 0 ? { a: assetIndex, b: true, p: limitPrice.toFixed(decimals), s: String(size), r: true, t: { limit: { tif: 'Ioc' } } } : null;
   return {
-    ok: true, quantity, filled, partial: remaining > 0, averagePrice, bestAsk, bestBid,
+    ok: true, quantity, size, sizeSnapped: size !== quantity, filled, partial: remaining > 0, averagePrice, bestAsk, bestBid,
     mid: Math.round(((bestAsk + bestBid) / 2) * 10_000) / 10_000,
     slippageBps: averagePrice == null ? null : Math.round(((averagePrice - bestAsk) / bestAsk) * 10_000 * 10) / 10,
-    levelsUsed, visibleDepth: round6(asks.reduce((sum, l) => sum + l.sz, 0)), bookTime: Number(book.time) || null,
+    slippageVsMarkBps: averagePrice == null || markPrice == null ? null : Math.round(((averagePrice - markPrice) / markPrice) * 10_000 * 10) / 10,
+    costVsPlan: averagePrice == null || markPrice == null ? null : Math.round((averagePrice - markPrice) * filled * 100) / 100,
+    levelsUsed, visibleDepth: round6(asks.reduce((sum, l) => sum + l.sz, 0)), bookTime, bookAgeSeconds, stale: bookAgeSeconds != null && bookAgeSeconds > 10,
+    limitPrice, slippageCapBps, order,
   };
 }
 

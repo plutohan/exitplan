@@ -118,3 +118,27 @@ test('previews a short reduction by walking the live asks read-only: average pri
   await assert.rejects(previewReduceShort({ quantity: 0, fetchImpl }), e => e.code === 'INVALID_AMOUNT');
   await assert.rejects(previewReduceShort({ quantity: 1, fetchImpl: async () => Response.json({ levels: 'nope' }) }), e => e.code === 'INVALID_RESPONSE');
 });
+
+test('the preview builds the unsigned reduce-only IOC order the user would sign, with a tick-rounded limit, cost vs plan and book age', async () => {
+  const book = JSON.parse(await readFile(new URL('./fixtures/hl-l2book.json', import.meta.url), 'utf8'));
+  const fetchImpl = async () => Response.json(book);
+  const bestAsk = Number(book.levels[1][0].px);
+  const result = await previewReduceShort({ quantity: 20, assetIndex: 5, szDecimals: 2, markPrice: 111, slippageCapBps: 50, now: () => book.time + 3000, fetchImpl });
+  const limit = Math.ceil(bestAsk * 1.005 * 100) / 100; // 5 significant figures → 2 decimals at this price, rounded up for a buy
+  assert.deepEqual(result.order, { a: 5, b: true, p: limit.toFixed(2), s: '20', r: true, t: { limit: { tif: 'Ioc' } } });
+  assert.equal(result.limitPrice, limit);
+  assert.equal(result.costVsPlan, Math.round((bestAsk - 111) * 20 * 100) / 100);
+  assert.equal(result.slippageVsMarkBps, Math.round(((bestAsk - 111) / 111) * 10000 * 10) / 10);
+  assert.equal(result.bookAgeSeconds, 3);
+  assert.equal(result.stale, false);
+  const old = await previewReduceShort({ quantity: 20, assetIndex: 5, szDecimals: 2, now: () => book.time + 20_000, fetchImpl });
+  assert.equal(old.stale, true);
+  assert.equal(old.costVsPlan, null, 'no mark, no cost comparison');
+  const snapped = await previewReduceShort({ quantity: 20.123, assetIndex: 5, szDecimals: 2, fetchImpl });
+  assert.equal(snapped.order.s, '20.12');
+  assert.equal(snapped.sizeSnapped, true);
+  const noIndex = await previewReduceShort({ quantity: 20, fetchImpl });
+  assert.equal(noIndex.order, null);
+  const cheap = await previewReduceShort({ quantity: 20, assetIndex: 5, szDecimals: 2, fetchImpl: async () => Response.json({ ...book, levels: [[{ px: '0.012345', sz: '1000' }], [{ px: '0.012346', sz: '1000' }]] }) });
+  assert.equal(cheap.order.p, '0.0125', 'four decimals at most for a perp with szDecimals 2, rounded up');
+});
