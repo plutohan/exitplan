@@ -3,8 +3,9 @@ const fixture = async name => JSON.parse(await readFile(new URL(`../fixtures/${n
 export const WALLET = 'DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK';
 export const HL = '0x4bdf1130109e9c1bc921d8979ea66284d9c92f37';
 /** A fetch over the captured fixtures for every public host the adapters use; fails on anything else, so a test proves no other call is made. */
-export async function publicStub({ hl = 'hl-sol-short', mode = 'disabled', lamports = 3_219_600_000 } = {}) {
-  const [state, funding, fees, meta, book, kamino, quote] = await Promise.all([fixture(hl), fixture('hl-funding-history'), fixture('hl-user-fees'), fixture('hl-meta'), fixture('hl-l2book'), fixture('kamino-obligations'), fixture('jupiter-quote')]);
+export async function publicStub({ hl = 'hl-sol-short', mode = 'disabled', lamports = 3_219_600_000, funding: fundingOverride } = {}) {
+  const [state, fundingFixture, fees, meta, book, kamino, quote] = await Promise.all([fixture(hl), fixture('hl-funding-history'), fixture('hl-user-fees'), fixture('hl-meta'), fixture('hl-l2book'), fixture('kamino-obligations'), fixture('jupiter-quote')]);
+  const funding = fundingOverride ?? fundingFixture;
   const calls = [];
   const json = (value) => Response.json(value);
   const fetchImpl = async (url, init = {}) => {

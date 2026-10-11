@@ -361,3 +361,20 @@ test('a "default" account mode is established from the balances: unified layout,
   const apart = await importHyperliquid(ADDR, { fetchImpl: fetchFor(idle, { mode: 'default', spot: { balances: [{ coin: 'USDC', token: 0, total: '10', hold: '0', entryNtl: '0' }] } }) });
   assert.deepEqual([apart.reported.effectiveMode, apart.reported.modeEvidence], ['standard', 'inferred'], 'perps equity larger than spot can only be the standard layout');
 });
+
+test('default-mode inference is conservative: a failed spot read proves nothing, an extra spot-order hold still reads as unified', async () => {
+  const perps = await fixture('hl-sol-short');
+  const blind = await importHyperliquid(ADDR, { fetchImpl: fetchFor(perps, { mode: 'default', spot: 'error' }) });
+  assert.deepEqual([blind.reported.effectiveMode, blind.reported.modeEvidence], ['standard', 'unknown'], 'no spot state, no inference');
+  const unifiedPerps = await fixture('hl-unified-perps');
+  const spot = structuredClone(await fixture('hl-unified-spot'));
+  const usdc = spot.balances.find(b => b.coin === 'USDC');
+  usdc.hold = String(Number(usdc.hold) + 500); // an open spot order on top of the margin hold
+  const withOrders = await importHyperliquid(ADDR, { fetchImpl: fetchFor(unifiedPerps, { mode: 'default', spot }) });
+  assert.deepEqual([withOrders.reported.effectiveMode, withOrders.reported.modeEvidence], ['unified', 'inferred']);
+  assert.equal(withOrders.reported.withdrawable, Math.round((Number(usdc.total) - Number(usdc.hold)) * 100) / 100);
+  const smaller = structuredClone(await fixture('hl-unified-spot'));
+  smaller.balances.find(b => b.coin === 'USDC').total = '1000'; smaller.balances.find(b => b.coin === 'USDC').hold = '0';
+  const apart = await importHyperliquid(ADDR, { fetchImpl: fetchFor(unifiedPerps, { mode: 'default', spot: smaller }) });
+  assert.deepEqual([apart.reported.effectiveMode, apart.reported.modeEvidence], ['standard', 'inferred'], 'spot smaller than perps equity can only be the standard layout');
+});

@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { importSolana, isSolanaAddress } from '../web/adapters/solana.mjs';
 import { importHyperliquid } from '../web/adapters/hyperliquid.mjs';
 import { defaultConstraints, planExit } from '../web/engine.mjs';
-import { buildImportedPortfolio, buildReport } from '../web/report.mjs';
+import { buildImportedPortfolio, buildReport, rejectionText, initialHlBuffer } from '../web/report.mjs';
 
 export const USAGE = `exitplan --sol <solana wallet> --hl <0x hyperliquid address> [--target 2000] [--max-debt 0] [--min-buffer 1500] [--deadline 24] [--keep-sol] [--no-hedge] [--select <route id>] [--json]
 Read-only pre-flight check for unwinding a Solana–Hyperliquid SOL hedge. Prints the plain-text report (or JSON). Nothing is signed or sent.
@@ -48,6 +48,8 @@ export async function run(argv, { fetchImpl = globalThis.fetch, write = (text) =
   const constraints = { ...defaultConstraints(), target: args.target, maxNewDebt: args.maxDebt, minHlBuffer: args.minBuffer, deadlineHours: args.deadline, preserveHedge: !args.noHedge, preserveSolQuantity: args.keepSol };
   const result = planExit(portfolio, constraints);
   if (args.select && !result.plans.some((plan) => plan.id === args.select)) { write(`Unknown route id "${args.select}". Known: ${result.plans.map((plan) => plan.id).join(', ')}\n`); return 2; }
+  const chosen = args.select ? result.plans.find((plan) => plan.id === args.select) : null;
+  if (chosen && !chosen.feasible) { write(`Route "${args.select}" is not feasible: ${rejectionText(chosen, constraints, initialHlBuffer(portfolio))}\n`); return 2; }
   const selectedId = args.select ?? result.best?.id ?? null;
   const params = new URLSearchParams({ sol: args.sol, hl: args.hl });
   for (const key of ['target', 'maxNewDebt', 'minHlBuffer', 'deadlineHours', 'preserveHedge', 'preserveSolQuantity']) params.set(key, String(constraints[key]));

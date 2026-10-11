@@ -88,8 +88,8 @@ export function preflightChecks({ imported, portfolio, constraints }) {
   const unifiedDetail = `spot USDC ${money(hl.reported.spotUsdc.total, true)} is the equity, ${money(hl.reported.spotUsdc.hold, true)} held for margin or open orders`;
   if (unifiedMode && hl.reported.crossCheck && !hl.reported.crossCheck.ok) push('warn', 'Account mode', `unified account, but the cross-check failed: spot USDC total minus maintenance ${money(hl.reported.crossCheck.implied, true)} vs exchange available ${money(hl.reported.crossCheck.available, true)}; positions on other perp DEXs (HIP-3) are not modelled`);
   else if (hl.reported.modeEvidence === 'verified') push('ok', 'Account mode', unifiedMode ? `verified on HyperCore: unified account (${unifiedDetail})` : 'verified on HyperCore: standard (abstraction disabled)');
-  else if (hl.reported.modeEvidence === 'inferred') push('ok', 'Account mode', `reported as default on HyperCore; the balances match the ${hl.reported.effectiveMode} layout, so it is modelled as ${hl.reported.effectiveMode}${unifiedMode ? ` (${unifiedDetail})` : ''}`);
-  else push('warn', 'Account mode', 'reported as default on HyperCore and could not be established from the balances (no perps equity yet); treated as standard');
+  else if (hl.reported.modeEvidence === 'inferred') push('warn', 'Account mode', `reported as default on HyperCore; the balances match the ${hl.reported.effectiveMode} layout, so it is modelled as ${hl.reported.effectiveMode}${unifiedMode ? ` (${unifiedDetail})` : ''}; confirm the mode in Hyperliquid settings before acting on Hyperliquid routes`);
+  else push('warn', 'Account mode', 'reported as default on HyperCore and could not be established from the balances; treated as standard, so confirm the mode in Hyperliquid settings before acting on Hyperliquid routes');
   const exposure = portfolio.solana.sol - portfolio.hyperliquid.shortSol;
   if (Math.abs(exposure) < 0.000001) push('ok', 'Net exposure', '0 SOL: spot and short balanced');
   else push('warn', 'Net exposure', `${num(exposure)} SOL: not neutral (spot ${num(portfolio.solana.sol)}, short ${num(portfolio.hyperliquid.shortSol)}); keep-net-exposure preserves this${hl.reported.spotSol > 0 ? ` · HyperCore spot also holds ${hl.reported.spotSol} USOL, not counted` : ''}`);
@@ -109,8 +109,9 @@ export function preflightChecks({ imported, portfolio, constraints }) {
   const walletUsdc = portfolio.solana.wallet.usdc;
   push(walletUsdc > 0 ? 'ok' : 'info', 'Wallet USDC', walletUsdc > 0 ? `${money(walletUsdc, true)} used first at zero fee` : 'none in the wallet');
   const fundingApr = portfolio.hyperliquid.fundingApr, supplyApy = portfolio.solana.lending.supplyApy;
+  const fundingSpan = hl.reported.funding ? (hl.reported.funding.hours >= 160 ? '7-day average' : `${hl.reported.funding.hours}-hour average`) : '7-day average';
   const shortNotional = portfolio.hyperliquid.shortSol * portfolio.hyperliquid.markPrice;
-  const fundingPart = fundingApr == null ? 'SOL funding history unavailable' : portfolio.hyperliquid.shortSol > 0 ? `short ${fundingApr >= 0 ? 'earns' : 'pays'} ~${money(Math.abs(shortNotional * fundingApr), true)}/yr funding (7-day average ${(fundingApr * 100).toFixed(2)}%)` : `no short; SOL funding 7-day average ${(fundingApr * 100).toFixed(2)}%`;
+  const fundingPart = fundingApr == null ? 'SOL funding history unavailable' : portfolio.hyperliquid.shortSol > 0 ? `short ${fundingApr >= 0 ? 'earns' : 'pays'} ~${money(Math.abs(shortNotional * fundingApr), true)}/yr funding (${fundingSpan} ${(fundingApr * 100).toFixed(2)}%)` : `no short; SOL funding ${fundingSpan} ${(fundingApr * 100).toFixed(2)}%`;
   const yieldPart = supplyApy == null ? 'Kamino supply APY unavailable' : deposit > 0 ? `deposit earns ~${money(deposit * supplyApy, true)}/yr (${(supplyApy * 100).toFixed(2)}% APY)` : `no deposit; Kamino USDC ${(supplyApy * 100).toFixed(2)}% APY`;
   push('info', 'Carry', `${fundingPart} · ${yieldPart}; each route shows the carry it gives up`);
   if (hl.reported.otherPositions.length) push('info', 'Other Hyperliquid positions', `${hl.reported.otherPositions.map((p) => p.coin).join(', ')}: margin treated as locked`);

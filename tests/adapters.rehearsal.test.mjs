@@ -183,3 +183,17 @@ test('the inner order uses canonical number strings, is withheld on a stale book
   assert.equal(dust.order, null);
   assert.match(dust.orderNote, /\$10 minimum/);
 });
+
+test('the order limit never exceeds the slippage allowance the engine reserved, and the order is withheld when the book sits above it', async () => {
+  const book = JSON.parse(await readFile(new URL('./fixtures/hl-l2book.json', import.meta.url), 'utf8'));
+  const flat = { ...book, levels: [[{ px: '99.99', sz: '10' }], [{ px: '100', sz: '10' }]] };
+  const fetchImpl = async () => Response.json(flat);
+  const capped = await previewReduceShort({ quantity: 1.5, assetIndex: 5, szDecimals: 2, markPrice: 100, maxSlippageBps: 10, now: () => book.time + 1000, fetchImpl });
+  assert.equal(capped.order.p, '100.1', 'mark × (1 + 10 bps), rounded down to the tick, instead of worst ask + 50 bps');
+  assert.equal(capped.limitVsMarkBps, 10);
+  const above = await previewReduceShort({ quantity: 1.5, assetIndex: 5, szDecimals: 2, markPrice: 99.5, maxSlippageBps: 10, now: () => book.time + 1000, fetchImpl });
+  assert.equal(above.order, null);
+  assert.match(above.orderNote, /above the 10 bps allowance/);
+  const uncapped = await previewReduceShort({ quantity: 1.5, assetIndex: 5, szDecimals: 2, markPrice: 100, now: () => book.time + 1000, fetchImpl });
+  assert.equal(uncapped.order.p, '100.5', 'no allowance given: worst ask + 50 bps as before');
+});

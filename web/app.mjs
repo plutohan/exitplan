@@ -538,7 +538,7 @@ const simulatable = (step) => step.action.startsWith('Sell SOL') || step.action.
 function bookPreviewText(result) {
   const rate = imported?.hyperliquid?.reported?.fees?.takerRate;
   const fee = rate == null || result.averagePrice == null ? null : result.filled * result.averagePrice * rate;
-  return `Book preview · buying back ${num(result.filled)} SOL walks ${result.levelsUsed} level${result.levelsUsed === 1 ? '' : 's'} to an average ${money(result.averagePrice ?? 0, true)} (${result.slippageBps ?? 0} bps above best ask ${money(result.bestAsk, true)}; plan mark ${money(portfolio.hyperliquid.markPrice, true)}) · est. taker fee ${fee == null ? 'unknown' : money(fee, true)}${rate == null ? '' : ` at ${(rate * 10_000).toFixed(3)} bps`}${result.costVsPlan != null ? ` · buy-back cost vs plan ${result.costVsPlan >= 0 ? '+' : '−'}${money(Math.abs(result.costVsPlan), true)} (${result.slippageVsMarkBps} bps vs ${portfolio.fees.hlSlippageBps ?? 0} bps allowance${result.slippageVsMarkBps > (portfolio.fees.hlSlippageBps ?? 0) ? ', above the allowance: re-check this route' : ''})` : ''}${result.bookAgeSeconds != null ? ` · book age ${result.bookAgeSeconds}s${result.stale ? ' (stale, run again)' : ''}` : ''}${result.orderNote ? ` · order not built: ${result.orderNote}` : ''}${result.partial ? ` · only ${num(result.visibleDepth)} SOL visible in the top ${result.levelsUsed} levels; the rest is beyond the visible book` : ''} · no order placed`;
+  return `Book preview · buying back ${num(result.filled)} SOL walks ${result.levelsUsed} level${result.levelsUsed === 1 ? '' : 's'} to an average ${money(result.averagePrice ?? 0, true)} (${result.slippageBps ?? 0} bps above best ask ${money(result.bestAsk, true)}; plan mark ${money(portfolio.hyperliquid.markPrice, true)}) · est. taker fee ${fee == null ? 'unknown' : money(fee, true)}${rate == null ? '' : ` at ${(rate * 10_000).toFixed(3)} bps`}${result.limitVsMarkBps != null ? ` · limit ${result.limitVsMarkBps} bps above mark` : ''}${result.costVsPlan != null ? ` · buy-back cost vs plan ${result.costVsPlan >= 0 ? '+' : '−'}${money(Math.abs(result.costVsPlan), true)} (${result.slippageVsMarkBps} bps vs ${portfolio.fees.hlSlippageBps ?? 0} bps allowance${result.slippageVsMarkBps > (portfolio.fees.hlSlippageBps ?? 0) ? ', above the allowance: re-check this route' : ''})` : ''}${result.bookAgeSeconds != null ? ` · book age ${result.bookAgeSeconds}s${result.stale ? ' (stale, run again)' : ''}` : ''}${result.orderNote ? ` · order not built: ${result.orderNote}` : ''}${result.partial ? ` · only ${num(result.visibleDepth)} SOL visible in the top ${result.levelsUsed} levels; the rest is beyond the visible book` : ''} · no order placed`;
 }
 const kaminoShortfall = (result, step) => result.deliveredUsdc != null && result.deliveredUsdc < step.amount - 0.01;
 function simulationBlock(step) {
@@ -574,7 +574,7 @@ async function runSimulation() {
   const stillCurrent = () => rehearsal === current && current.version === revision && current.index === index && current.simulation?.token === token;
   try {
     const result = step.action.startsWith('Reduce SOL short')
-      ? await previewReduceShort({ quantity: step.amount, assetIndex: imported.hyperliquid.reported.assetIndex, szDecimals: imported.hyperliquid.reported.szDecimals ?? 2, markPrice: portfolio.hyperliquid.markPrice })
+      ? await previewReduceShort({ quantity: step.amount, assetIndex: imported.hyperliquid.reported.assetIndex, szDecimals: imported.hyperliquid.reported.szDecimals ?? 2, markPrice: portfolio.hyperliquid.markPrice, maxSlippageBps: portfolio.fees.hlSlippageBps ?? null })
       : step.action.startsWith('Withdraw lending')
         ? await simulateKaminoWithdraw({ address: imported.solana.address, amountUsdc: step.amount })
         : await simulateSellSol({ address: imported.solana.address, solAmount: step.amount });
@@ -1029,6 +1029,14 @@ function applyDeepLink() {
     constraints = { ...constraints, ...patch };
     markCustom();
     recalculate();
+  }
+  // A new address invalidates any rehearsal in flight before the import starts, so a late result cannot describe the old account.
+  if (imported && (imported.solana.address !== sol || imported.hyperliquid.address !== hl)) {
+    rehearsal = null;
+    revision++;
+    const detail = $('#detail-dialog');
+    if (detail?.open) detail.close();
+    $('#dialog-body').innerHTML = '';
   }
   loadPositions();
 }

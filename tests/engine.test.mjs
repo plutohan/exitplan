@@ -430,9 +430,13 @@ test('a minimum order value rejects short reductions the exchange would not acce
   const p = createDemoPortfolio(); p.solana.wallet.usdc = 1995; p.hyperliquid.lotSize = 0.01; p.hyperliquid.minOrderUsd = 10;
   const result = planExit(p, defaultConstraints());
   const paired = result.plans.find(x => x.id === 'paired-unwind');
-  assert.equal(paired.shortReduced, 0.06);
-  assert.equal(paired.feasible, false);
-  assert.ok(paired.rejections.some(r => /\$10\.00 minimum order/.test(r)), paired.rejections.join(' | '));
+  assert.equal(paired.shortReduced, 0.1, 'the search steps up to the first placeable lot at or above the $10 minimum');
+  assert.ok(paired.feasible, paired.rejections.join(' | '));
+  assert.ok(paired.netCash >= 2000);
+  const tiny = createDemoPortfolio(); tiny.solana.wallet.usdc = 1995; tiny.hyperliquid.lotSize = 0.01; tiny.hyperliquid.minOrderUsd = 10; tiny.hyperliquid.shortSol = 0.05; tiny.solana.sol = 0.05;
+  const stuck = planExit(tiny, defaultConstraints()).plans.find(x => x.id === 'paired-unwind');
+  assert.equal(stuck.feasible, false);
+  assert.ok(stuck.rejections.some(r => /\$10\.00 minimum order/.test(r)), 'no placeable quantity exists, so the postcondition still explains it: ' + stuck.rejections.join(' | '));
   assert.ok(result.plans.find(x => x.id === 'withdraw-lending').feasible);
   const noMinimum = planExit({ ...p, hyperliquid: { ...p.hyperliquid, minOrderUsd: 0 } }, defaultConstraints());
   assert.ok(noMinimum.plans.find(x => x.id === 'paired-unwind').feasible);

@@ -48,10 +48,13 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
   if (spotUsdc.hold > spotUsdc.total + 1e-6) throw new AdapterError('INVALID_RESPONSE', `Spot USDC hold ($${spotUsdc.hold.toFixed(2)}) exceeds the total ($${spotUsdc.total.toFixed(2)}); the balances do not fit the model`);
   // A "default" abstraction setting is not a verified mode: establish it from the balances. In the unified layout the spot
   // total contains the perps equity and the hold equals perps equity minus perps withdrawable; a standard account keeps them apart.
+  // Conservative: a failed spot read proves nothing; a hold larger than the margin in use (open spot orders) still fits the unified layout;
+  // only a spot balance smaller than the perps equity, or no USDC entry at all, proves the standard layout.
+  const spotKnown = spot !== undefined && spot !== null && typeof spot === 'object' && Array.isArray(spot.balances);
   const perpsHeld = Math.max(0, perpsAccountValue - perpsWithdrawable); // margin actually in use; without it the two layouts cannot be told apart
-  const holdMatches = Math.abs(spotUsdc.hold - perpsHeld) <= Math.max(1, spotUsdc.total * 0.0001);
-  const layoutUnified = Boolean(usdcEntry) && perpsHeld > 1 && holdMatches && spotUsdc.total >= perpsAccountValue - 1;
-  const layoutStandard = perpsAccountValue > 0 && (!usdcEntry || spotUsdc.total < perpsAccountValue - 1 || (perpsHeld > 1 && !holdMatches));
+  const tolerance = Math.max(1, spotUsdc.total * 0.0001);
+  const layoutUnified = spotKnown && Boolean(usdcEntry) && perpsHeld > 1 && spotUsdc.hold >= perpsHeld - tolerance && spotUsdc.total >= perpsAccountValue - 1;
+  const layoutStandard = spotKnown && perpsAccountValue > 0 && (!usdcEntry || spotUsdc.total < perpsAccountValue - 1);
   const effectiveMode = declaredMode ?? (layoutUnified ? 'unified' : 'standard');
   const modeEvidence = declaredMode ? 'verified' : layoutUnified || layoutStandard ? 'inferred' : 'unknown';
   unified = effectiveMode === 'unified';
@@ -155,8 +158,8 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
         ? 'Unified account verified on HyperCore: the spot USDC total is the account equity (it already contains the perps margin and unrealised PnL); withdrawable is spot USDC total minus hold, both exchange figures'
         : 'Account mode verified on HyperCore: standard (abstraction disabled)'
       : modeEvidence === 'inferred'
-        ? `Account mode reported as "default" on HyperCore; the balances match the ${effectiveMode} layout (${unified ? 'the spot total contains the perps equity and the hold equals perps equity minus perps withdrawable' : 'perps equity is held apart from spot USDC'}), so it is modelled as ${effectiveMode}`
-        : 'Account mode reported as "default" on HyperCore and could not be established from the balances (no perps equity yet); treated as standard',
+        ? `Account mode reported as "default" on HyperCore; the balances match the ${effectiveMode} layout (${unified ? 'the spot total contains the perps equity and the hold equals perps equity minus perps withdrawable' : 'perps equity is held apart from spot USDC'}), so it is modelled as ${effectiveMode}; confirm the mode in Hyperliquid settings (Account abstraction) before acting on Hyperliquid routes`
+        : 'Account mode reported as "default" on HyperCore and could not be established from the balances; treated as standard, so confirm the mode in Hyperliquid settings (Account abstraction) before acting on Hyperliquid routes',
     `Reserve is ${(reserveRate * 100).toFixed(reserveRate * 100 % 1 ? 2 : 0)}% of short notional (the larger of the exchange's 10% transfer floor and the position's initial margin rate), not the exchange maintenance margin`,
     "Other open positions lock the larger of their initial margin and 10% of their notional (the exchange's transfer rule), deducted from equity",
   ];

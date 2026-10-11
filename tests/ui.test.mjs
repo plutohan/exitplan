@@ -996,9 +996,10 @@ test('the pre-flight readout warns when the HL buffer is under the floor and whe
   assert.ok(text('HL margin buffer').classList.contains('warn'));
   assert.match(text('HL margin buffer').textContent, /under your \$1,500 floor/);
   assert.match(text('HL margin buffer').textContent, /non-HL routes are evaluated separately/);
-  assert.ok(text('Account mode').classList.contains('ok'), 'a default mode whose balances match the standard layout passes as inferred');
+  assert.ok(text('Account mode').classList.contains('warn'), 'an inferred mode is never graded as a pass');
   assert.match(text('Account mode').textContent, /default/);
   assert.match(text('Account mode').textContent, /standard layout/);
+  assert.match(text('Account mode').textContent, /confirm/i);
 });
 
 test('a unified Hyperliquid account imports and the pre-flight readout says so', async t => {
@@ -1186,4 +1187,17 @@ test('the floor suggestion never proposes a floor the buffer cannot meet', async
   const labels = [...ui.document.querySelectorAll('[data-suggestion]')].map(b => b.textContent);
   const floor = labels.find(l => /Lower the margin floor/.test(l));
   if (floor) assert.match(floor, /Lower the margin floor to \$(7\d\d|800)\b/, `half the floor would be $1,000, above the $800 buffer: ${floor}`);
+});
+
+test('a deep link that changes the address while a rehearsal is open closes it before the new import starts', async t => {
+  const ui = await mount(t, { externalResponse: external() });
+  await importPositions(ui);
+  await ui.input('#target', 500);
+  await ui.click('[data-plan="paired-unwind"]');
+  await ui.click('#rehearse');
+  assert.match(ui.get('#dialog-body').textContent, /Read-only rehearsal/);
+  ui.window.location.hash = '#sol=8mgVs81Psuz72TAPjjz1KAjLbefUPxh73Qo4JkfcVu4x&hl=0x3796bF467561B61a21e0B523894E44B8Ae5c6516&target=500';
+  ui.window.dispatchEvent(new ui.window.Event('hashchange'));
+  assert.equal(ui.document.querySelector('.rehearsal-step'), null, 'the rehearsal of the old account is gone before the new import starts');
+  assert.equal(ui.get('#solana-address').value, '8mgVs81Psuz72TAPjjz1KAjLbefUPxh73Qo4JkfcVu4x');
 });

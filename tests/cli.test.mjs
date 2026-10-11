@@ -73,3 +73,11 @@ test('the report lists each rejected route name once, keeping the attempt closes
   assert.ok(names.length > 0);
   assert.equal(new Set(names).size, names.length, 'duplicate rejected names: ' + names.join(' | '));
 });
+
+test('--select of a rejected route exits with its reason instead of a report with nothing selected', async () => {
+  const { fetchImpl } = await publicStub();
+  const out = capture();
+  assert.equal(await run(['--sol', WALLET, '--hl', HL, '--target', '500', '--select', 'sell-sol'], { fetchImpl, write: out.write }), 2);
+  assert.match(out.text(), /not feasible/i);
+  assert.match(out.text(), /net SOL exposure/);
+});

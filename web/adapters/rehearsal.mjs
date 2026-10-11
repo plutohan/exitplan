@@ -8,7 +8,7 @@ export const HL_INFO_URL = 'https://api.hyperliquid.xyz/info';
 
 const bytesFromBase64 = (text) => { try { const bin = atob(text); const out = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i); return out; } catch { return null; } };
 const base64FromBytes = (bytes) => { let bin = ''; for (const byte of bytes) bin += String.fromCharCode(byte); return btoa(bin); };
-/** The message bytes of a serialized transaction: a compact-u16 signature count, that many 64-byte signature slots, then the message. Null when the bytes do not fit that layout. */
+/** The message bytes of a serialized legacy or v0 transaction: a compact-u16 signature count, that many 64-byte signature slots, then the message. Null when the bytes do not fit that layout (a v1 transaction stores its signatures at the tail and is not decoded here). */
 export function messageFromTransaction(transactionBase64) {
   if (typeof transactionBase64 !== 'string' || !transactionBase64) return null;
   const bytes = bytesFromBase64(transactionBase64);
@@ -33,8 +33,14 @@ export function tickRoundUp(px, szDecimals) {
   const factor = 10 ** decimals;
   return { price: Math.ceil(px * factor - 1e-9) / factor, decimals };
 }
+export function tickRoundDown(px, szDecimals) {
+  const maxDecimals = Math.max(0, 6 - szDecimals);
+  const decimals = Math.max(0, Math.min(maxDecimals, 4 - Math.floor(Math.log10(px))));
+  const factor = 10 ** decimals;
+  return { price: Math.floor(px * factor + 1e-9) / factor, decimals };
+}
 
-export async function previewReduceShort({ quantity, assetIndex = null, szDecimals = 2, markPrice = null, slippageCapBps = 50, fetchImpl = globalThis.fetch, now = Date.now, timeoutMs = 8000 }) {
+export async function previewReduceShort({ quantity, assetIndex = null, szDecimals = 2, markPrice = null, slippageCapBps = 50, maxSlippageBps = null, fetchImpl = globalThis.fetch, now = Date.now, timeoutMs = 8000 }) {
   if (!Number.isFinite(quantity) || quantity <= 0) throw new AdapterError('INVALID_AMOUNT', 'Quantity must be a positive number of SOL');
   const sizeFactor = 10 ** szDecimals;
   const size = Math.floor(quantity * sizeFactor + 1e-9) / sizeFactor; // what the exchange would accept
@@ -54,13 +60,18 @@ export async function previewReduceShort({ quantity, assetIndex = null, szDecima
   const filled = round6(size - remaining);
   const averagePrice = filled > 0 ? Math.round((cost / filled) * 10_000) / 10_000 : null;
   const bestAsk = asks[0].px, bestBid = bids[0].px;
-  const { price: limitPrice, decimals } = tickRoundUp(worstPrice * (1 + slippageCapBps / 10_000), szDecimals);
+  // The limit must never spend more than the allowance the engine reserved against collateral: cap it at mark × (1 + allowance).
+  const walked = tickRoundUp(worstPrice * (1 + slippageCapBps / 10_000), szDecimals);
+  const cap = markPrice != null && maxSlippageBps != null ? tickRoundDown(markPrice * (1 + maxSlippageBps / 10_000), szDecimals) : null;
+  const limitPrice = cap == null ? walked.price : Math.min(walked.price, cap.price);
+  const decimals = cap == null ? walked.decimals : Math.max(walked.decimals, cap.decimals);
+  const aboveAllowance = cap != null && worstPrice > cap.price;
   const bookTime = Number(book.time) || null;
   const bookAgeSeconds = bookTime ? Math.max(0, Math.round((now() - bookTime) / 1000)) : null;
   // The order the user would sign, in the exchange's own wire shape: buy, reduce-only, immediate-or-cancel. Built, never sent.
   const canonical = (value) => String(Number(value)); // Hyperliquid signing rules: no trailing zeros, no exponent at these magnitudes
   const stale = bookAgeSeconds == null || bookAgeSeconds > 10;
-  const orderNote = !Number.isInteger(assetIndex) || assetIndex < 0 ? 'asset index unavailable, order not built' : stale ? `book is ${bookAgeSeconds == null ? 'undated' : `stale (${bookAgeSeconds}s old)`}; run the preview again before signing` : size * limitPrice < 10 ? `below the $10 minimum order at the limit price ($${(size * limitPrice).toFixed(2)})` : null;
+  const orderNote = !Number.isInteger(assetIndex) || assetIndex < 0 ? 'asset index unavailable, order not built' : stale ? `book is ${bookAgeSeconds == null ? 'undated' : `stale (${bookAgeSeconds}s old)`}; run the preview again before signing` : aboveAllowance ? `the book sits above the ${maxSlippageBps} bps allowance (worst walked ask ${worstPrice} vs cap ${cap.price}); re-check the route or raise the allowance` : size * limitPrice < 10 ? `below the $10 minimum order at the limit price ($${(size * limitPrice).toFixed(2)})` : null;
   const order = orderNote ? null : { a: assetIndex, b: true, p: canonical(limitPrice.toFixed(decimals)), s: canonical(size), r: true, t: { limit: { tif: 'Ioc' } } };
   return {
     ok: true, quantity, size, sizeSnapped: size !== quantity, filled, partial: remaining > 0, averagePrice, bestAsk, bestBid,
@@ -69,7 +80,7 @@ export async function previewReduceShort({ quantity, assetIndex = null, szDecima
     slippageVsMarkBps: averagePrice == null || markPrice == null ? null : Math.round(((averagePrice - markPrice) / markPrice) * 10_000 * 10) / 10,
     costVsPlan: averagePrice == null || markPrice == null ? null : Math.round((averagePrice - markPrice) * filled * 100) / 100,
     levelsUsed, visibleDepth: round6(asks.reduce((sum, l) => sum + l.sz, 0)), bookTime, bookAgeSeconds, stale,
-    limitPrice, slippageCapBps, order, orderNote,
+    limitPrice, limitVsMarkBps: markPrice == null ? null : Math.round(((limitPrice - markPrice) / markPrice) * 10_000 * 10) / 10, slippageCapBps, maxSlippageBps, order, orderNote,
   };
 }
 

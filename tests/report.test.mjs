@@ -65,3 +65,13 @@ test('engine errors are printed in the report instead of a plausible empty route
   assert.match(text, /## Errors/);
   assert.match(text, new RegExp(result.errors[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 });
+
+test('the carry check labels a short funding history by its real span', async () => {
+  const hour = 3_600_000, start = 1_791_000_000_000;
+  const { fetchImpl } = await publicStub({ funding: Array.from({ length: 10 }, (_, i) => ({ coin: 'SOL', fundingRate: '0.00001', premium: '0', time: start + i * hour })) });
+  const [solana, hyperliquid] = await Promise.all([importSolana(WALLET, { fetchImpl }), importHyperliquid(HL, { fetchImpl })]);
+  const portfolio = buildImportedPortfolio(solana, hyperliquid);
+  const carry = preflightChecks({ imported: { solana, hyperliquid }, portfolio, constraints: defaultConstraints() }).find(c => c.label === 'Carry');
+  assert.match(carry.detail, /10-hour average/);
+  assert.doesNotMatch(carry.detail, /7-day/);
+});
