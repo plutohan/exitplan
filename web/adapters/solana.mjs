@@ -55,14 +55,17 @@ export async function importSolana(address, { fetchImpl = globalThis.fetch, now 
     record(obligation, `obligation[${index}]`);
     const state = record(obligation.state, `obligation[${index}].state`);
     const stats = record(obligation.refreshedStats, `obligation[${index}].refreshedStats`);
-    const deposits = (Array.isArray(state.deposits) ? state.deposits : []).filter(entry => entry && entry.depositReserve !== EMPTY_RESERVE);
-    const borrows = (Array.isArray(state.borrows) ? state.borrows : []).filter(entry => entry && entry.borrowReserve !== EMPTY_RESERVE);
+    if (!Array.isArray(state.deposits) || !Array.isArray(state.borrows)) throw new AdapterError('INVALID_RESPONSE', `obligation[${index}] is missing its deposit or borrow lists`);
+    const deposits = state.deposits.filter(entry => entry && entry.depositReserve !== EMPTY_RESERVE);
+    const borrows = state.borrows.filter(entry => entry && entry.borrowReserve !== EMPTY_RESERVE);
     if (deposits.some(entry => entry.depositReserve !== USDC_RESERVE)) {
       throw new AdapterError('UNSUPPORTED_OBLIGATION', 'Kamino obligations holding assets other than USDC are not supported by this model');
     }
     const totalBorrow = decimal(stats.userTotalBorrow ?? 0, 'userTotalBorrow');
     if (borrows.length > 0 || totalBorrow > 0) debt += Math.max(totalBorrow, 0.01);
-    usdc += decimal(stats.userTotalDeposit ?? 0, 'userTotalDeposit');
+    const totalDeposit = decimal(stats.userTotalDeposit ?? 0, 'userTotalDeposit');
+    if (totalDeposit > 0 && deposits.length === 0) throw new AdapterError('INVALID_RESPONSE', `obligation[${index}] reports a deposit total without deposit entries`);
+    usdc += totalDeposit;
     reports.push({ address: String(obligation.obligationAddress ?? ''), deposits: deposits.length, borrows: borrows.length });
   }
   usdc = round2(usdc);

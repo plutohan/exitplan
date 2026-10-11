@@ -74,6 +74,10 @@ test('rejects malformed address without fetching', async () => {
   }
 });
 
+test('Jupiter priceImpactPct is a fraction: 0.025 means 2.5% (verified 2026-10-11 with a 200,000 SOL quote: per-SOL price fell 2.5%)', () => {
+  assert.equal(solSaleBpsFromQuote({ priceImpactPct: '0.0250889608' }), 301);
+});
+
 test('sale fee never drops below 30 bps and grows with price impact', () => {
   assert.equal(solSaleBpsFromQuote({ priceImpactPct: '0' }), 50);
   assert.equal(solSaleBpsFromQuote({ priceImpactPct: '-0.01' }), 30);
@@ -84,4 +88,13 @@ test('RPC errors and malformed quotes fail closed', async () => {
   const data = await loaded();
   await assert.rejects(importSolana(WALLET, { fetchImpl: fetchFor({ ...data, rpcError: { code: -32602, message: 'bad' } }) }), e => e.code === 'HTTP_ERROR');
   await assert.rejects(importSolana(WALLET, { fetchImpl: fetchFor({ ...data, quote: { routePlan: [] } }) }), e => e.code === 'INVALID_RESPONSE');
+});
+
+test('rejects obligations whose deposit list is missing or inconsistent with the total', async () => {
+  const missing = await loaded();
+  delete missing.obligations[0].state.deposits;
+  await assert.rejects(importSolana(WALLET, { fetchImpl: fetchFor(missing) }), e => e instanceof AdapterError && e.code === 'INVALID_RESPONSE');
+  const inconsistent = await loaded();
+  for (const entry of inconsistent.obligations[0].state.deposits) { entry.depositReserve = '11111111111111111111111111111111'; entry.depositedAmount = '0'; }
+  await assert.rejects(importSolana(WALLET, { fetchImpl: fetchFor(inconsistent) }), e => e instanceof AdapterError && e.code === 'INVALID_RESPONSE');
 });

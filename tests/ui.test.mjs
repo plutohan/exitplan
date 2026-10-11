@@ -89,6 +89,13 @@ async function mount(t, { aiConfigured = false, intentResponse, marketResponse, 
   install('Event', window.Event);
   install('CustomEvent', window.CustomEvent);
   install('fetch', fetchMock);
+  const RealDate = Date;
+  const start = RealDate.now();
+  class FakeDate extends RealDate {
+    constructor(...args) { super(...(args.length ? args : [start + clock])); }
+    static now() { return start + clock; }
+  }
+  install('Date', FakeDate);
   install('setTimeout', schedule);
   install('clearTimeout', id => timers.delete(id));
   install('requestAnimationFrame', callback => schedule(() => callback(clock), 16));
@@ -624,4 +631,46 @@ test('the guided scenario strip is hidden while imported positions are shown', a
   assert.equal(ui.get('.guide').hasAttribute('hidden'), true);
   await ui.input('#source-scenario', true, 'change');
   assert.equal(ui.get('.guide').hasAttribute('hidden'), false);
+});
+
+test('the hedge switch is labelled as net exposure, not a ratio', async t => {
+  const ui = await mount(t, { aiConfigured: true, intentResponse: () => json(aiProposal({ preserveHedge: false })) });
+  assert.equal(ui.get('#preserve-hedge').getAttribute('aria-label'), 'Keep net SOL exposure');
+  assert.equal(ui.get('#preserve-hedge').closest('.constraint-row').querySelector('strong').textContent, 'Keep net SOL exposure');
+  await ui.input('#intent', 'Let the exposure change');
+  await ui.event('#intent-form', 'submit');
+  assert.match(ui.get('#intent-feedback').textContent, /Keep net SOL exposure: on → off/);
+});
+
+test('an imported snapshot older than five minutes fails closed until reloaded', async t => {
+  const ui = await mount(t, { externalResponse: external() });
+  await importPositions(ui);
+  await ui.advance(301_000);
+  await ui.input('#target', 2500);
+  assert.match(ui.get('#result-banner').textContent, /older than 5 minutes/);
+  assert.match(ui.get('#import-status').textContent, /older than 5 minutes/);
+  assert.equal(ui.get('#rehearse').disabled, true);
+  await ui.click('#load-positions');
+  assert.match(ui.get('#import-status').textContent, /Loaded/);
+  assert.doesNotMatch(ui.get('#result-banner').textContent, /older than/);
+  assert.equal(ui.get('#rehearse').disabled, false);
+});
+
+test('changing an address mid-load discards the stale result', async t => {
+  const pending = deferred();
+  const ui = await mount(t, { externalResponse: call => pending.promise.then(respond => respond(call)) });
+  await importPositions(ui);
+  await ui.input('#hl-address', '0x' + 'b'.repeat(40));
+  pending.resolve(external());
+  await flush(); await flush();
+  assert.equal(ui.get('.evidence-badge').textContent, 'SCENARIO');
+  assert.match(ui.get('#import-status').textContent, /addresses changed/i);
+  assert.equal(ui.get('#load-positions').disabled, false);
+});
+
+test('exposure caption compares the route with the imported starting exposure', async t => {
+  const ui = await mount(t, { externalResponse: external() });
+  await importPositions(ui);
+  assert.match(ui.get('#portfolio-caption').textContent, /unchanged/);
+  assert.doesNotMatch(ui.get('#portfolio-caption').textContent, /exposure to price moves changes/);
 });

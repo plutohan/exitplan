@@ -4,7 +4,7 @@
 
 You hold SOL on Solana, some USDC in Kamino, and a SOL short on Hyperliquid that hedges it. You need $5,000 in a Solana wallet by tomorrow. Which legs do you unwind? Selling spot breaks the hedge. Pulling margin risks the short. Borrowing adds debt you said you did not want.
 
-ExitPlan takes a **cash goal plus the limits you refuse to break** (new-debt cap, keep-the-hedge, keep-SOL-quantity, minimum margin buffer, planning window), enumerates the ways to raise the cash across both venues, and shows every route that fits, every route that does not, and **why**. It then rehearses the chosen route step by step. Nothing is signed or sent.
+ExitPlan takes a **cash goal plus the limits you refuse to break** (new-debt cap, keep net SOL exposure, keep-SOL-quantity, minimum margin buffer, planning window), enumerates the ways to raise the cash across both venues, and shows every route that fits, every route that does not, and **why**. It then rehearses the chosen route step by step. Nothing is signed or sent.
 
 ## What is real in this build
 
