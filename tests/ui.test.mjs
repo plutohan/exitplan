@@ -178,6 +178,9 @@ function assertNoExecutionCalls(ui) {
 
 test('real app initializes fixture values and reports unavailable AI honestly', async t => {
   const ui = await mount(t);
+  assert.match(ui.document.title, /pre-flight check/i);
+  assert.match(ui.get('h1').textContent, /pre-flight/i);
+  assert.match(ui.document.querySelector('meta[name="description"]').getAttribute('content'), /Hyperliquid order/);
   assert.deepEqual(currentConstraints(ui), defaultConstraints());
   assert.match(ui.get('#sol-price').textContent, /100\.00/);
   assert.equal(ui.get('#ai-status').textContent, 'AI offline');
