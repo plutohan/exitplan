@@ -852,3 +852,10 @@ test('displayed route cards never repeat the same outcome, and untouched HL buff
   const buffer = [...ui.document.querySelectorAll('.position-card')].find(card => /margin buffer/.test(card.textContent));
   assert.equal(buffer.querySelector('.position-before').textContent, buffer.querySelector('.position-after').textContent.replace(/[A-Z]+$/, ''));
 });
+
+test('the page ships an inline icon so browsers do not request a missing favicon', async t => {
+  const ui = await mount(t);
+  const icon = ui.document.querySelector('link[rel="icon"]');
+  assert.ok(icon, 'link[rel=icon] present');
+  assert.match(icon.getAttribute('href'), /^data:image\/svg\+xml/);
+});
