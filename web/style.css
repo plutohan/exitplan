@@ -22,3 +22,6 @@ body{font-size:14px}.eyebrow{font-size:10px}.workspace-label{font-size:10px}.nav
 #import-status.error{color:var(--danger)}
 .evidence-badge{font-size:8px;letter-spacing:.06em;padding:2px 5px;border-radius:3px;border:1px solid #35402e;color:#8d9b85;white-space:nowrap}
 @media (max-width:720px){.import-row{grid-template-columns:1fr}}
+.simulation{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.simulation-note{font-size:9px;color:#8d9b85;margin:4px 0 0}
+.simulation-note.error{color:var(--danger)}

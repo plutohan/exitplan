@@ -555,3 +555,39 @@ test('switching back to the scenario restores fixture values', async t => {
   assert.equal(ui.get('.evidence-badge').textContent, 'SCENARIO');
   assert.equal(ui.get('#import-row').hasAttribute('hidden'), true);
 });
+
+test('imported rehearsal simulates the sell leg read-only and other steps are labelled not simulated', async t => {
+  const base = external();
+  const ui = await mount(t, { externalResponse: async call => {
+    const target = new URL(call.url);
+    if (target.pathname === '/swap/v1/swap') return json({ swapTransaction: 'AQAA' });
+    if (target.host === 'solana-rpc.publicnode.com' && JSON.parse(call.body).method === 'simulateTransaction') return json({ jsonrpc: '2.0', id: 1, result: { context: { slot: 1 }, value: { err: null, logs: ['x', 'y'], unitsConsumed: 4242 } } });
+    return base(call);
+  } });
+  await importPositions(ui);
+  await ui.input('#target', 300);
+  await ui.click('[data-plan="paired-unwind"]');
+  assert.equal(ui.get('.plan-card.selected').dataset.plan, 'paired-unwind');
+  await ui.click('#rehearse');
+  assert.match(ui.get('#dialog-body').textContent, /Read-only rehearsal/);
+  assert.ok(ui.document.querySelector('#simulate-step'), 'sell step offers a read-only simulation');
+  await ui.click('#simulate-step');
+  for (let i = 0; i < 60 && /Simulating/.test(ui.get('#simulation-result').textContent); i++) await flush(); // three sequential network hops
+  assert.match(ui.get('#simulation-result').textContent, /Simulation succeeded/);
+  assert.match(ui.get('#simulation-result').textContent, /4,242/);
+  const rpcMethods = ui.calls.filter(call => call.host === 'solana-rpc.publicnode.com').map(call => JSON.parse(call.body).method);
+  assert.ok(rpcMethods.includes('simulateTransaction'));
+  assert.ok(!rpcMethods.includes('sendTransaction'));
+  await ui.click('#rehearsal-next');
+  assert.equal(Boolean(ui.document.querySelector('#simulate-step')), false);
+  assert.match(ui.get('#dialog-body').textContent, /Not simulated/);
+  assertNoExecutionCalls(ui);
+});
+
+test('scenario rehearsal never offers a simulation', async t => {
+  const ui = await mount(t);
+  await ui.click('[data-plan="paired-unwind"]');
+  await ui.click('#rehearse');
+  assert.equal(Boolean(ui.document.querySelector('#simulate-step')), false);
+  assert.doesNotMatch(ui.get('#dialog-body').textContent, /Not simulated/);
+});
