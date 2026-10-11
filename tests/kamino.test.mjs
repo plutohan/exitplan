@@ -69,3 +69,10 @@ test('an SDK "could not find vanilla obligation" error is reported as a missing 
   assert.equal(result.status, 404);
   assert.match(result.body.error, /no Kamino obligation/i);
 });
+
+test('a failure to load the SDK is a clean 502, never an unhandled exception', async () => {
+  const result = await simulateKaminoWithdraw({ wallet: WALLET, amountUsdc: 1 }, { loadSdkImpl: async () => { throw new Error('Cannot find module klend'); } });
+  assert.equal(result.status, 502);
+  assert.equal(result.body.ok, false);
+  assert.doesNotMatch(JSON.stringify(result.body), /Cannot find module/);
+});

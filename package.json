@@ -14,5 +14,10 @@
   "dependencies": {
     "@kamino-finance/klend-sdk": "^13.0.2",
     "@solana/kit": "^2.3.0"
+  },
+  "overrides": {
+    "rpc-websockets": {
+      "uuid": "^9.0.1"
+    }
   }
 }

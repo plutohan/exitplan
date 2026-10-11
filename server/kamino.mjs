@@ -31,7 +31,7 @@ function loadSdk() {
   return sdkPromise;
 }
 
-export async function simulateKaminoWithdraw(body, { sdk, rpcUrl = process.env.SOLANA_RPC_URL || DEFAULT_RPC_URL, now = Date.now } = {}) {
+export async function simulateKaminoWithdraw(body, { sdk, loadSdkImpl = loadSdk, rpcUrl = process.env.SOLANA_RPC_URL || DEFAULT_RPC_URL, now = Date.now } = {}) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return { status: 400, body: { error: 'Request must be a JSON object with wallet and amountUsdc' } };
   const { wallet, amountUsdc } = body;
   if (typeof wallet !== 'string' || !SOLANA_ADDRESS.test(wallet)) return { status: 400, body: { error: 'wallet must be a Solana address' } };
@@ -39,7 +39,16 @@ export async function simulateKaminoWithdraw(body, { sdk, rpcUrl = process.env.S
     return { status: 400, body: { error: `amountUsdc must be a positive number up to ${MAX_USDC.toLocaleString('en-US')}` } };
   }
   const baseUnits = String(Math.round(amountUsdc * 1e6));
-  const lib = sdk ?? (await loadSdk());
+  let lib = sdk;
+  if (!lib) {
+    try {
+      lib = await loadSdkImpl();
+    } catch (error) {
+      sdkPromise = null; // allow a retry on the next request
+      console.error('kamino sdk failed to load', error?.name, String(error?.message || '').slice(0, 300));
+      return { status: 502, body: { error: 'Kamino simulation is unavailable right now', ok: false } };
+    }
+  }
   try {
     const rpc = lib.createSolanaRpc(rpcUrl);
     const market = await lib.KaminoMarket.load(rpc, lib.address(KAMINO_MAIN_MARKET), 450);
