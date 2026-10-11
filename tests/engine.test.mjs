@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createDemoPortfolio, defaultConstraints, planExit } from '../web/engine.mjs';
+import { createDemoPortfolio, defaultConstraints, planExit, requiredMarginCents } from '../web/engine.mjs';
 
 const run = (constraints = {}, portfolio = createDemoPortfolio()) => planExit(portfolio, { ...defaultConstraints(), ...constraints });
 const route = (result, id) => result.plans.find(plan => plan.id === id);
@@ -273,4 +273,31 @@ test('every candidate has auditable cent-denominated cash, fees and collateral c
       assert.ok(Math.abs(17000 - plan.fees - after) <= 0.011, `${plan.id} fails equity conservation`);
     }
   }
+});
+
+test('imported portfolios are accepted and labelled, scenario flag mismatches are rejected', () => {
+  const imported = { ...createDemoPortfolio(), evidence: 'imported', synthetic: false };
+  const result = planExit(imported, defaultConstraints());
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.evidence, 'imported');
+  assert.ok(result.plans.every(plan => plan.evidence === 'imported'));
+  assert.ok(result.warnings[0].startsWith('Imported snapshot'));
+  for (const bad of [{ evidence: 'imported', synthetic: true }, { evidence: 'scenario', synthetic: false }, { evidence: 'live', synthetic: false }]) {
+    assert.ok(planExit({ ...createDemoPortfolio(), ...bad }, defaultConstraints()).errors.length > 0, JSON.stringify(bad));
+  }
+});
+
+test('an account with no short is accepted and paired routes size to zero', () => {
+  const portfolio = { ...createDemoPortfolio(), evidence: 'imported', synthetic: false };
+  portfolio.hyperliquid = { ...portfolio.hyperliquid, shortSol: 0, freeWithdrawable: 3000 };
+  const result = planExit(portfolio, { ...defaultConstraints(), preserveHedge: false, target: 2000 });
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.plans.find(p => p.id === 'paired-unwind').solSold, 0);
+  assert.ok(result.best);
+});
+
+test('requiredMarginCents matches the engine reserve', () => {
+  assert.equal(requiredMarginCents(100, 100, 0.1), 100_000);
+  assert.equal(requiredMarginCents(0, 109.69, 0.1), 0);
+  assert.equal(requiredMarginCents(1.234567, 109.69, 0.1), 1355);
 });

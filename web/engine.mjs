@@ -16,6 +16,9 @@ const units = value => Math.round(value * UNITS);
 const mulFloor = (a, b, divisor) => Number(BigInt(a) * BigInt(b) / BigInt(divisor));
 const mulCeil = (a, b, divisor) => Number((BigInt(a) * BigInt(b) + BigInt(divisor - 1)) / BigInt(divisor));
 const feeFor = (amount, basisPoints) => mulCeil(amount, basisPoints, 10_000);
+/** Integer cents of the model reserve for a SOL short, using the engine's own rounding. Adapters reuse it. */
+export const requiredMarginCents = (shortSol, markPrice, rate) => feeFor(mulCeil(units(shortSol), cents(markPrice), UNITS), Math.round(rate * 10_000));
+const IMPORTED_WARNING = 'Imported snapshot: balances and positions were read from public APIs at load time; fees, reserve rate, timings and borrowing terms remain model assumptions.';
 
 export function createDemoPortfolio() {
   return {
@@ -60,7 +63,9 @@ function validate(portfolio, supplied) {
   number(constraints.deadlineHours, 'deadlineHours', { max: 8760, scale: 1_000_000 });
   for (const key of ['preserveHedge', 'preserveSolQuantity']) if (typeof constraints[key] !== 'boolean') errors.push(`${key} must be boolean.`);
   if (!p || typeof p !== 'object' || Array.isArray(p)) return { errors: [...errors, 'Portfolio is missing.'], constraints };
-  if (p.evidence !== 'scenario' || p.synthetic !== true) errors.push('Only explicitly synthetic scenario portfolios are supported.');
+  const scenario = p.evidence === 'scenario' && p.synthetic === true;
+  const imported = p.evidence === 'imported' && p.synthetic === false;
+  if (!scenario && !imported) errors.push('Portfolio evidence must be scenario (synthetic: true) or imported (synthetic: false).');
   if (p.snapshot?.complete !== true) errors.push('Portfolio snapshot is missing or incomplete.');
   number(p.snapshot?.ageSeconds, 'snapshot.ageSeconds', { scale: 1, max: 31_536_000 });
   number(p.snapshot?.maxAgeSeconds, 'snapshot.maxAgeSeconds', { scale: 1, max: 300 });
@@ -88,8 +93,7 @@ function validate(portfolio, supplied) {
   for (const key of ['solSaleBps', 'hlCloseBps', 'borrowAprBps']) number(f?.[key], `fees.${key}`, { max: 10_000, scale: 1 });
   for (const key of ['lendingWithdrawHours', 'hlTransferHours', 'tradeHours', 'borrowHours']) number(t?.[key], `timing.${key}`, { max: 8760, scale: 1_000_000 });
   if (!errors.length) {
-    const notional = mulCeil(units(h.shortSol), cents(h.markPrice), UNITS);
-    const required = feeFor(notional, Math.round(h.conservativeMarginRate * 10_000));
+    const required = requiredMarginCents(h.shortSol, h.markPrice, h.conservativeMarginRate);
     if (required > cents(h.collateral)) errors.push('Hyperliquid collateral is below the scenario required margin.');
     if (cents(h.freeWithdrawable) > Math.max(0, cents(h.collateral) - required)) errors.push('Hyperliquid free-withdrawable input exceeds collateral less the scenario reserve.');
   }
@@ -99,9 +103,10 @@ function validate(portfolio, supplied) {
 /** Pure bounded enumeration. Invalid or unsupported inputs fail closed in result.errors. */
 export function planExit(portfolio, suppliedConstraints = defaultConstraints()) {
   const { errors, constraints: c } = validate(portfolio, suppliedConstraints);
+  const evidence = portfolio?.evidence === 'imported' ? 'imported' : 'scenario';
   const result = {
     plans: [], feasible: [], best: null, maximumWithoutSelling: 0,
-    evidence: 'scenario', executionSupported: false, warnings: [...BASE_WARNINGS], errors,
+    evidence, executionSupported: false, warnings: evidence === 'imported' ? [IMPORTED_WARNING, ...BASE_WARNINGS.slice(1)] : [...BASE_WARNINGS], errors,
     cashAsset: 'USDC', cashDestination: 'Solana wallet (scenario)',
     ranking: 'Lowest total upfront fees, then less new debt, less SOL sold, fewer steps, and stable plan ID.',
     constraints: c
@@ -189,7 +194,7 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
       borrowAprBps: f.borrowAprBps,
       borrowDailyCarryEstimate: dollars(mulCeil(a.borrowed, f.borrowAprBps, 3_650_000)),
       borrowCarryEstimate: a.borrowed ? null : 0,
-      feasible: rejections.length === 0, rejections, evidence: 'scenario', executionSupported: false,
+      feasible: rejections.length === 0, rejections, evidence, executionSupported: false,
       comparisonOnly: true,
       limitations: a.borrowed ? ['Borrowing is a hypothetical fixture comparison; no borrowing adapter is implemented.', 'Total carry cannot be estimated without a repayment horizon. Daily interest uses the fixture APR; the cash-arrival deadline is not a loan holding period.'] : []
     });
