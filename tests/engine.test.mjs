@@ -468,3 +468,13 @@ test('lot size and minimum order hold across a grid of lots, targets and constra
   }
   assert.ok(feasibleCount > 100, `grid produced ${feasibleCount} feasible plans`);
 });
+
+test('routes that collapse to the same allocation are listed once, whichever family produced them', () => {
+  const result = planExit(createDemoPortfolio(), { ...defaultConstraints(), target: 1000 });
+  const signatures = result.plans.map(p => JSON.stringify([p.walletUsed, p.lendingAfter, p.hlCollateralAfter, p.solSold, p.shortReduced, p.newDebt]));
+  assert.equal(new Set(signatures).size, signatures.length, 'duplicate allocations: ' + signatures.filter((s, i) => signatures.indexOf(s) !== i).join(' | '));
+  assert.ok(!result.plans.some(p => p.id === 'close-short'), 'a zero-size short reduction is the plain HL withdrawal, not a second route');
+  assert.ok(result.plans.some(p => p.id === 'withdraw-hl' && p.feasible));
+  const bigger = planExit(createDemoPortfolio(), { ...defaultConstraints(), target: 2000, preserveHedge: false });
+  assert.ok(bigger.plans.some(p => p.id === 'close-short' && p.shortReduced > 0), 'a real reduction stays its own route');
+});

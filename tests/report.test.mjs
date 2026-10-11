@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { importSolana } from '../web/adapters/solana.mjs';
 import { importHyperliquid } from '../web/adapters/hyperliquid.mjs';
 import { defaultConstraints, planExit, createDemoPortfolio } from '../web/engine.mjs';
-import { buildImportedPortfolio, buildReport, preflightChecks, planName, stepName, rejectionText, carryText, initialHlBuffer } from '../web/report.mjs';
+import { buildImportedPortfolio, buildReport, preflightChecks, planName, stepName, rejectionText, carryText, initialHlBuffer, money } from '../web/report.mjs';
 import { publicStub, WALLET, HL } from './helpers/public-stub.mjs';
 
 test('report helpers are pure: names, rejection reasons, carry text and the buffer work without a DOM', async () => {
@@ -32,4 +32,23 @@ test('the pre-flight checks and the report come from the imported state alone', 
   assert.match(text, /- Account mode: ok · verified on HyperCore/);
   assert.match(text, /Plan link: https:\/\/example\.test\/#x/);
   assert.equal(text.split('\n').filter(line => /^\d+\. /.test(line)).length, result.feasible.length);
+});
+
+test('route names say which venue the cash comes from, rejection reasons read as plain English, and money always shows cents when there are any', () => {
+  const base = { id: 'x', family: 'hybrid', walletUsed: 0, newDebt: 0, solSold: 1, shortReduced: 1 };
+  const hl = { venue: 'Hyperliquid → Solana (fixture)', action: 'Withdraw and transfer USDC collateral', amount: 10, unit: 'USDC' };
+  const lend = { venue: 'Solana lending (fixture)', action: 'Withdraw lending USDC', amount: 10, unit: 'USDC' };
+  assert.equal(planName({ ...base, steps: [hl] }), 'HL collateral + trim spot and short');
+  assert.equal(planName({ ...base, steps: [lend] }), 'Withdraw deposits + trim spot and short');
+  assert.equal(planName({ ...base, steps: [lend, hl] }), 'Withdraw deposits + HL collateral + trim spot and short');
+  const c = { ...defaultConstraints(), preserveSolQuantity: true };
+  const plan = { netCash: 2000, solSold: 1, shortReduced: 1, newDebt: 0, hlBufferAfter: 100, estimatedHours: 1 };
+  const text = rejectionText(plan, c, 3000);
+  assert.match(text, /Sells SOL while keep-SOL-quantity is on/);
+  assert.match(text, /Leaves the Hyperliquid buffer below your \$1,500 floor/);
+  assert.equal(rejectionText({ netCash: 2000, solSold: 0, shortReduced: 0, newDebt: 0, hlBufferAfter: 3000, estimatedHours: 1 }, defaultConstraints(), 3000), 'Needs more than the available balance, collateral or position allows');
+  assert.equal(money(336.4), '$336.40');
+  assert.equal(money(500), '$500');
+  assert.equal(money(500, true), '$500.00');
+  assert.equal(money(1234.5), '$1,234.50');
 });

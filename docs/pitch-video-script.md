@@ -3,7 +3,7 @@
 Record with Loom or screen + webcam. Hook first, bio second. Show the live site from 1:00. Say every number as "as of October 12".
 
 **0:00 – 0:20 · Hook** *(Phantom showing a SOL balance and a SOL short in Perps)*
-"Long SOL in Phantom, short SOL on Hyperliquid: a hedge that has paid shorts about 9% a year in funding. Tonight you need $5,000." *(0:08)* "Pull margin and your liquidation price drops. Sell SOL and you're net short. Kamino's USDC pool is 93% lent out." *(0:14, ExitPlan loading both chains)* "ExitPlan is the pre-flight check: both chains, your rules, your fees, and every leg rehearsed before you sign."
+"Long SOL in Phantom, short SOL on Hyperliquid: a hedge that has paid shorts about 9% a year in funding. Tonight you need $5,000." *(0:08)* "Pull margin and your liquidation price drops. Sell SOL and you're net short. Kamino's USDC pool is 93% lent out." *(0:14, ExitPlan loading both chains)* "ExitPlan is the pre-flight check: both chains, your rules, your fees, and every leg rehearsed read-only before you sign: two Solana simulations and the Hyperliquid order built on the live book."
 
 **0:20 – 0:30 · Who**
 "I'm Pluto. I contribute to Solana developer tooling, and I built this alone during the hackathon."
@@ -19,7 +19,7 @@ Record with Loom or screen + webcam. Hook first, bio second. Show the live site 
 - Keep-SOL with no debt: no route. "What would make it work" → trim both legs → a route appears, net exposure unchanged, "carry given up $14 a year" on the card.
 - One rejection reason read aloud.
 - Rehearsal, three legs: the Hyperliquid step walks the live order book and shows the exact unsigned reduce-only order you would sign, with the cost against the plan. The Kamino step: "Kamino's SDK built the real withdrawal, Solana simulated it, and it would deliver exactly the planned USDC." The sell step: "Jupiter built the exact swap; it succeeds within a fraction of a percent of the plan. Nothing was signed or sent."
-- Margin math: "On live Standard and Unified accounts the model's withdrawable equals Hyperliquid's own number to the cent."
+- Margin math: "On live Standard and Unified accounts the model's withdrawable matches Hyperliquid's own number within a few cents."
 - Copy the pre-flight report; AI prompt for ten seconds, confirmed before anything applies.
 
 **2:00 – 2:25 · Market and business**
@@ -31,4 +31,4 @@ Record with Loom or screen + webcam. Hook first, bio second. Show the live site 
 **2:45 – 2:55 · Close**
 "ExitPlan: the pre-flight check before you unwind. Link in the submission. Thanks."
 
-Do not say "safe", "real-time" or "audited". Say "read at load time", "nothing is signed", and name the reviews that were done (Claude, Codex and Claude Opus, several rounds).
+Do not say "safe", "real-time" or "audited". Say "read at load time", "nothing is signed", and, if you mention reviews, call them AI-assisted (Claude, Codex and Claude Opus), not independent.

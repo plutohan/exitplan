@@ -167,7 +167,8 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
   const signatures = new Set();
   const add = (id, label, a, family, deduplicate = false) => {
     const signature = [a.wallet, a.lending, a.hl, a.sold, a.closed, a.borrowed].join(':');
-    if (deduplicate && signatures.has(signature)) return;
+    // Any two candidates with the same allocation are the same route, whichever family proposed it: list it once.
+    if (signatures.has(signature)) return;
     signatures.add(signature);
     const proceedsFees = (a.lending ? fixedLendingFee : 0) + (a.hl ? fixedTransferFee : 0)
       + feeFor(notional(a.sold), f.solSaleBps) + (a.borrowed ? fixedBorrowFee : 0);

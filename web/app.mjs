@@ -795,6 +795,10 @@ function renderSource() {
     ? `Planning uses the Jupiter quote SOL ${money(portfolio.solana.solPrice, true)}`
     : 'Planning assumes SOL $100';
   $('.guide').toggleAttribute('hidden', isImported);
+  $('#workspace-label').textContent = isImported ? 'Imported positions' : 'Synthetic scenario';
+  $('#try-live').toggleAttribute('hidden', isImported);
+  const marketNote = $('#market-reference-value');
+  if (/reference only/.test(marketNote.textContent)) marketNote.textContent = isImported ? 'The public market mid is a reference only; planning uses the Jupiter quote and the position mark read at load' : 'The public market price is a reference only and does not reprice the synthetic scenario';
   renderPreflight();
   $('#share-link').disabled = !imported;
 }
@@ -868,6 +872,7 @@ async function loadPositions() {
     }
     portfolio = candidate;
     imported = { solana, hyperliquid, at: Date.now() };
+    try { if (location.hash !== `#${planLink().split('#')[1]}`) history.replaceState(null, '', planLink()); } catch {}
     const bufferNow = initialHlBuffer();
     const floorNote =
       bufferNow < constraints.minHlBuffer
@@ -907,6 +912,11 @@ const EXAMPLE = {
   solana: 'DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK',
   hyperliquid: '0x4bdf1130109e9c1bc921d8979ea66284d9c92f37',
 };
+$('#try-live').addEventListener('click', () => {
+  $('#source-import').checked = true;
+  setSource('import');
+  $('#load-example').click();
+});
 $('#load-example').addEventListener('click', () => {
   setSource('import');
   $('#solana-address').value = EXAMPLE.solana;

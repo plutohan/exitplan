@@ -4,7 +4,7 @@ import { createDemoPortfolio, requiredMarginCents } from './engine.mjs';
 const fmt = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
 export const money = (n, precise = false) =>
   '$' +
-  new Intl.NumberFormat('en-US', { minimumFractionDigits: precise ? 2 : 0, maximumFractionDigits: 2 }).format(
+  new Intl.NumberFormat('en-US', { minimumFractionDigits: precise || Math.abs((Number(n) || 0) % 1) > 1e-9 ? 2 : 0, maximumFractionDigits: 2 }).format(
     Number(n) || 0,
   );
 export const num = (n) => fmt.format(Number(n) || 0);
@@ -20,9 +20,7 @@ export function planName(p) {
   if (p.shortReduced > 0 && p.solSold === 0)
     return walletPrefix + (hasLend ? 'Reduce short + released margin + deposits' : 'Reduce short + released margin');
   if (p.solSold > 0 && p.shortReduced > 0)
-    return (
-      walletPrefix + (hasLend || hasHl ? 'Withdraw deposits + trim spot and short' : 'Trim spot and short together')
-    );
+    return walletPrefix + (hasLend && hasHl ? 'Withdraw deposits + HL collateral + trim spot and short' : hasLend ? 'Withdraw deposits + trim spot and short' : hasHl ? 'HL collateral + trim spot and short' : 'Trim spot and short together');
   if (p.solSold > 0) return walletPrefix + 'Sell SOL only';
   if (hasLend && hasHl) return walletPrefix + 'Split withdrawal: Solana + HL';
   if (hasLend) return walletPrefix + 'Withdraw Solana deposit USDC';
@@ -59,14 +57,14 @@ export const initialHlBuffer = (portfolio) =>
 export function rejectionText(p, constraints, initialBuffer) {
   const reasons = [];
   if (p.netCash < constraints.target) reasons.push(`${money(constraints.target - p.netCash)} short of the target`);
-  if (constraints.preserveSolQuantity && p.solSold > 0) reasons.push('Violates keep-SOL-quantity');
+  if (constraints.preserveSolQuantity && p.solSold > 0) reasons.push('Sells SOL while keep-SOL-quantity is on');
   if (constraints.preserveHedge && Math.abs(p.solSold - p.shortReduced) > 0.0000005)
-    reasons.push('Spot and short mismatch changes net SOL exposure');
+    reasons.push('Spot sold and short reduced differ, which changes net SOL exposure while keep-net-exposure is on');
   if (p.newDebt > constraints.maxNewDebt) reasons.push(`New debt ${money(p.newDebt)} exceeds the limit`);
   if (p.hlBufferAfter < constraints.minHlBuffer && p.hlBufferAfter < initialBuffer)
-    reasons.push('Below the minimum margin buffer');
+    reasons.push(`Leaves the Hyperliquid buffer below your ${money(constraints.minHlBuffer)} floor`);
   if (p.estimatedHours > constraints.deadlineHours) reasons.push('Assumed duration exceeds the planning window');
-  return reasons.join(' · ') || 'Exceeds a withdrawal or position limit';
+  return reasons.join(' · ') || 'Needs more than the available balance, collateral or position allows';
 }
 
 export function buildImportedPortfolio(solana, hyperliquid) {

@@ -181,6 +181,9 @@ test('real app initializes fixture values and reports unavailable AI honestly', 
   assert.match(ui.document.title, /pre-flight check/i);
   assert.match(ui.get('h1').textContent, /pre-flight/i);
   assert.match(ui.document.querySelector('meta[name="description"]').getAttribute('content'), /Hyperliquid order/);
+  assert.match(ui.document.querySelector('meta[property="og:title"]').getAttribute('content'), /pre-flight/i);
+  assert.match(ui.get('#try-live').textContent, /Try on live accounts/);
+  assert.match(ui.get('.sidebar-bottom').textContent, /Synthetic scenario/);
   assert.deepEqual(currentConstraints(ui), defaultConstraints());
   assert.match(ui.get('#sol-price').textContent, /100\.00/);
   assert.equal(ui.get('#ai-status').textContent, 'AI offline');
@@ -1100,4 +1103,17 @@ test('the pre-flight report is a plain-text document with checks, routes, the se
   assert.match(text, /target=500/);
   assert.match(text, /Not financial advice/);
   assert.match(ui.get('#toast').textContent, /Report (copied|ready)/);
+});
+
+test('the hero button loads the public example without touching the source radio first, and the chrome stops calling it a demo', async t => {
+  const ui = await mount(t, { externalResponse: external() });
+  await ui.click('#try-live');
+  for (let i = 0; i < 40 && !/Loaded|Could not/.test(ui.get('#import-status').textContent); i++) await flush();
+  assert.equal(ui.get('#source-import').checked, true);
+  assert.match(ui.get('#import-status').textContent, /Loaded/);
+  assert.match(ui.get('.sidebar-bottom').textContent, /Imported positions/);
+  assert.doesNotMatch(ui.get('.sidebar-bottom').textContent, /Demo workspace/);
+  assert.match(ui.get('#market-reference-value').textContent, /reference only/);
+  assert.doesNotMatch(ui.get('#market-reference-value').textContent, /synthetic scenario/);
+  if (ui.window.history?.replaceState) assert.match(String(ui.window.location.hash), /sol=/);
 });
