@@ -851,22 +851,23 @@ function renderPreflight() {
   const items = [];
   const push = (status, label, detail) => items.push({ status, label, detail });
   if (hl.reported.accountMode === 'disabled') push('ok', 'Account mode', 'verified on HyperCore: standard (abstraction disabled)');
-  else if (hl.reported.accountMode === 'unifiedAccount') push('ok', 'Account mode', `verified on HyperCore: unified account (spot USDC ${money(hl.reported.spotUsdc.total, true)} backs the perps, ${money(hl.reported.spotUsdc.hold, true)} held)`);
+  else if (hl.reported.accountMode === 'unifiedAccount') push('ok', 'Account mode', `verified on HyperCore: unified account (spot USDC ${money(hl.reported.spotUsdc.total, true)} is the equity, ${money(hl.reported.spotUsdc.hold, true)} held as margin)`);
   else push('warn', 'Account mode', 'reported as default on HyperCore; treated as standard, not proven');
   const exposure = portfolio.solana.sol - portfolio.hyperliquid.shortSol;
   if (Math.abs(exposure) < 0.000001) push('ok', 'Net exposure', '0 SOL: spot and short balanced');
-  else push('warn', 'Net exposure', `${num(exposure)} SOL: not neutral (spot ${num(portfolio.solana.sol)}, short ${num(portfolio.hyperliquid.shortSol)}); keep-net-exposure preserves this`);
+  else push('warn', 'Net exposure', `${num(exposure)} SOL: not neutral (spot ${num(portfolio.solana.sol)}, short ${num(portfolio.hyperliquid.shortSol)}); keep-net-exposure preserves this${hl.reported.spotSol > 0 ? ` · HyperCore spot also holds ${hl.reported.spotSol} USOL, not counted` : ''}`);
   if (portfolio.hyperliquid.shortSol > 0 && hl.reported.liquidationPrice) {
     const distance = (hl.reported.liquidationPrice - portfolio.hyperliquid.markPrice) / portfolio.hyperliquid.markPrice;
-    push(distance >= 0.25 ? 'ok' : 'warn', 'Liquidation', `${money(hl.reported.liquidationPrice, true)} vs mark ${money(portfolio.hyperliquid.markPrice, true)} (+${(distance * 100).toFixed(0)}% away), SOL only`);
+    if (distance <= 0) push('warn', 'Liquidation', `${money(hl.reported.liquidationPrice, true)} vs mark ${money(portfolio.hyperliquid.markPrice, true)}: at or past liquidation on the exchange's number; reload positions`);
+    else push(distance >= 0.25 ? 'ok' : 'warn', 'Liquidation', `${money(hl.reported.liquidationPrice, true)} vs mark ${money(portfolio.hyperliquid.markPrice, true)} (${(distance * 100).toFixed(0)}% above mark), cross-margin price from the exchange; assumes other positions' prices hold`);
   } else push('info', 'Liquidation', 'no SOL short, no liquidation price');
   const buffer = initialHlBuffer();
-  if (buffer < constraints.minHlBuffer) push('warn', 'HL margin buffer', `${money(buffer, true)} is under your ${money(constraints.minHlBuffer)} floor: HL withdrawals blocked, Solana routes work`);
-  else push('ok', 'HL margin buffer', `${money(buffer, true)} above your ${money(constraints.minHlBuffer)} floor (exchange reported ${money(hl.reported.withdrawable, true)} withdrawable)`);
+  if (buffer < constraints.minHlBuffer) push('warn', 'HL margin buffer', `model buffer ${money(buffer, true)} (10% reserve) is under your ${money(constraints.minHlBuffer)} floor: HL withdrawals only after reducing the short; Solana routes work`);
+  else push('ok', 'HL margin buffer', `model buffer ${money(buffer, true)} (10% reserve) above your ${money(constraints.minHlBuffer)} floor; exchange reported ${money(hl.reported.withdrawable, true)} withdrawable`);
   const liquidity = so.reported.reserveLiquidity, deposit = portfolio.solana.lending.usdc;
   if (deposit <= 0) push('info', 'Kamino liquidity', 'no Kamino deposit to withdraw');
-  else if (liquidity >= deposit) push('ok', 'Kamino liquidity', `${money(liquidity)} available in the USDC reserve vs your ${money(deposit, true)} deposited`);
-  else push('warn', 'Kamino liquidity', `only ${money(liquidity)} withdrawable now vs your ${money(deposit, true)} deposited`);
+  else if (liquidity >= deposit) push('ok', 'Kamino liquidity', `${money(liquidity, true)} pool cash in the USDC reserve (before withdrawal caps) vs your ${money(deposit, true)} deposited`);
+  else push('warn', 'Kamino liquidity', `only ${money(liquidity, true)} pool cash in the USDC reserve (before withdrawal caps) vs your ${money(deposit, true)} deposited`);
   const walletUsdc = portfolio.solana.wallet.usdc;
   push(walletUsdc > 0 ? 'ok' : 'info', 'Wallet USDC', walletUsdc > 0 ? `${money(walletUsdc, true)} used first at zero fee` : 'none in the wallet');
   if (hl.reported.otherPositions.length) push('info', 'Other Hyperliquid positions', `${hl.reported.otherPositions.map((p) => p.coin).join(', ')}: margin treated as locked`);
@@ -953,12 +954,12 @@ async function loadPositions() {
         : '';
     recalculate();
     renderSource();
-    const emptyHl = hyperliquid.state.shortSol === 0 && hyperliquid.reported.accountValue === 0;
+    const emptyHl = hyperliquid.state.shortSol === 0;
     setImportStatus(
       loadedStatus() +
         floorNote +
         (emptyHl
-          ? ' · Hyperliquid account has no SOL position and no equity. Phantom Perps users: enter the 0x address from your Phantom wallet'
+          ? ` · Hyperliquid account has no SOL position${hyperliquid.reported.accountValue === 0 ? ' and no equity' : ''}. Phantom Perps users: enter the 0x address from your Phantom wallet`
           : ''),
       emptyHl,
     );

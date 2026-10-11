@@ -940,6 +940,9 @@ test('the pre-flight readout appears only for imported positions and grades each
   assert.ok(text('Net exposure').classList.contains('warn'), 'a net short of 88 SOL is flagged, not hidden');
   assert.match(text('Net exposure').textContent, /-88\.1 SOL/);
   assert.match(text('Liquidation').textContent, /\$267/);
+  assert.match(text('Liquidation').textContent, /other positions' prices hold/);
+  assert.match(text('HL margin buffer').textContent, /model buffer/i);
+  assert.match(text('Kamino liquidity').textContent, /pool cash/);
   assert.match(text('Kamino liquidity').textContent, /\$8,075,224/);
   assert.ok(text('Kamino liquidity').classList.contains('ok'));
   assert.match(text('Wallet USDC').textContent, /\$336\.40/);
@@ -973,4 +976,26 @@ test('a unified Hyperliquid account imports and the pre-flight readout says so',
   assert.ok(item.classList.contains('ok'));
   assert.match(item.textContent, /unified/i);
   assert.match(item.textContent, /spot USDC/);
+});
+
+test('the pre-flight readout flags a mark at or past the liquidation price and a short that cannot be withdrawn from without reducing it', async t => {
+  const hl = structuredClone(hlShort);
+  const sol = hl.assetPositions.find(a => a.position.coin === 'SOL').position;
+  sol.liquidationPx = '100';
+  const ui = await mount(t, { externalResponse: external({ hl }) });
+  await importPositions(ui);
+  const items = [...ui.document.querySelectorAll('#preflight-items li')];
+  const liq = items.find(li => /Liquidation/.test(li.textContent));
+  assert.ok(liq.classList.contains('warn'));
+  assert.match(liq.textContent, /at or past liquidation/);
+  assert.doesNotMatch(liq.textContent, /\+-/);
+});
+
+test('a unified account with USDC but no SOL short gets the empty-position hint, and SOL held on HyperCore spot is called out', async t => {
+  const spot = { balances: [{ coin: 'USDC', token: 0, total: '500', hold: '0', entryNtl: '0' }, { coin: 'USOL', token: 200, total: '4', hold: '0', entryNtl: '400' }], tokenToAvailableAfterMaintenance: [[0, '500']] };
+  const ui = await mount(t, { externalResponse: external({ hl: hlNoPosition, mode: 'unifiedAccount', spot }) });
+  await importPositions(ui);
+  assert.match(ui.get('#import-status').textContent, /no SOL position/);
+  const exposure = [...ui.document.querySelectorAll('#preflight-items li')].find(li => /Net exposure/.test(li.textContent));
+  assert.match(exposure.textContent, /4 USOL/);
 });

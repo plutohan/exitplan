@@ -192,7 +192,7 @@ test('missing and stale snapshots block all candidate generation', () => {
 });
 
 test('unsupported account and margin modes fail closed rather than extrapolating risk', () => {
-  for (const mode of ['unified', 'portfolioMargin', 'portfolio', undefined]) {
+  for (const mode of ['portfolioMargin', 'portfolio', 'isolated', undefined]) {
     const p = createDemoPortfolio(); p.hyperliquid.accountMode = mode;
     assert.match(run({}, p).errors.join(' '), /account mode/);
   }
@@ -366,4 +366,14 @@ test('sales never size to the full SOL balance: 0.01 SOL stays for rent and fees
   const sale = route(run({ target: 190, preserveHedge: false }, p), 'sell-sol');
   assert.equal(sale.feasible, true);
   assert.ok(sale.solAfter >= 0.01);
+});
+
+test('a unified Hyperliquid account mode is accepted alongside standard', () => {
+  const portfolio = createDemoPortfolio();
+  portfolio.hyperliquid.accountMode = 'unified';
+  const result = planExit(portfolio, defaultConstraints());
+  assert.deepEqual(result.errors, []);
+  assert.ok(result.feasible.length > 0);
+  portfolio.hyperliquid.accountMode = 'portfolio-margin';
+  assert.ok(planExit(portfolio, defaultConstraints()).errors.some(line => /account mode/.test(line)));
 });

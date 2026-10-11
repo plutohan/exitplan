@@ -1,0 +1,168 @@
+diff --git a/tests/adapters.hyperliquid.test.mjs b/tests/adapters.hyperliquid.test.mjs
+index 956f8aa..3e39738 100644
+--- a/tests/adapters.hyperliquid.test.mjs
++++ b/tests/adapters.hyperliquid.test.mjs
+@@ -13,6 +13,7 @@ const fetchFor = (state, options = {}) => async (url, init) => {
+   if (body.type === 'allMids') return Response.json(options.mids ?? mids);
+   if (body.type === 'userAbstraction') { assert.equal(body.user, ADDR); return Response.json(options.mode ?? 'disabled'); }
+   if (body.type === 'vaultDetails') { assert.equal(body.vaultAddress, ADDR); return Response.json(options.vault ?? null); }
++  if (body.type === 'spotClearinghouseState') { assert.equal(body.user, ADDR); return Response.json(options.spot ?? { balances: [] }); }
+   if (body.type === 'clearinghouseState') { assert.equal(body.user, ADDR); return Response.json(state); }
+   assert.fail('unexpected request ' + init.body);
+ };
+@@ -102,7 +103,7 @@ test('equity above the reserve but below locked margin still rejects with LEVERA
+ 
+ test('verifies the account mode on HyperCore: standard accepted, abstraction modes rejected', async () => {
+   const state = await fixture('hl-sol-short');
+-  for (const mode of ['portfolioMargin', 'unifiedAccount', 'dexAbstraction', 'somethingNew', 42]) {
++  for (const mode of ['portfolioMargin', 'dexAbstraction', 'somethingNew', 42]) {
+     await assert.rejects(importHyperliquid(ADDR, { fetchImpl: fetchFor(state, { mode }) }), e => e instanceof AdapterError && e.code === 'UNSUPPORTED_ACCOUNT_MODE');
+   }
+   const standard = await importHyperliquid(ADDR, { fetchImpl: fetchFor(state, { mode: 'disabled' }) });
+@@ -131,11 +132,29 @@ test('liquidation estimate is anchored on the exchange price and moves the right
+   assert.equal(estimateLiquidationAfter({ ...base, liquidationPrice: null, withdraw: 0, closeQty: 0, closeFee: 0 }), null);
+ });
+ 
+-test('unified and portfolio-margin rejections explain where the USDC sits and what works today', async () => {
++test('portfolio-margin rejections explain what is modelled', async () => {
+   const state = await fixture('hl-sol-short');
+-  for (const mode of ['unifiedAccount', 'portfolioMargin']) {
+-    await assert.rejects(importHyperliquid(ADDR, { fetchImpl: fetchFor(state, { mode }) }), e => e.code === 'UNSUPPORTED_ACCOUNT_MODE' && /spot balance/.test(e.message) && /Standard accounts today/.test(e.message));
+-  }
++  await assert.rejects(importHyperliquid(ADDR, { fetchImpl: fetchFor(state, { mode: 'portfolioMargin' }) }), e => e.code === 'UNSUPPORTED_ACCOUNT_MODE' && /portfolio margin/i.test(e.message) && /Standard and Unified/.test(e.message));
++});
++
++test('a unified account imports with the spot USDC balance backing the perps', async () => {
++  const perps = await fixture('hl-unified-perps');
++  const spot = await fixture('hl-unified-spot');
++  const result = await importHyperliquid(ADDR, { fetchImpl: fetchFor(perps, { mode: 'unifiedAccount', spot }) });
++  assert.equal(result.reported.accountMode, 'unifiedAccount');
++  const usdc = spot.balances.find(b => b.coin === 'USDC');
++  const freeSpot = Number(usdc.total) - Number(usdc.hold);
++  const sol = perps.assetPositions.find(a => a.position.coin === 'SOL').position;
++  const locked = perps.assetPositions.filter(a => a.position.coin !== 'SOL').reduce((sum, a) => sum + Number(a.position.marginUsed), 0);
++  const equity = freeSpot + Number(perps.marginSummary.accountValue);
++  assert.equal(result.state.collateral, Math.round((equity - locked) * 100) / 100);
++  assert.equal(result.state.shortSol, Math.round(-Number(sol.szi) * 1e6) / 1e6);
++  assert.equal(result.reported.withdrawable, Math.round((freeSpot + Number(perps.withdrawable)) * 100) / 100);
++  assert.ok(result.state.freeWithdrawable <= result.reported.withdrawable + 0.01);
++  assert.ok(result.assumptions.some(line => /Unified account/.test(line)), result.assumptions.join(' | '));
++  assert.deepEqual(result.reported.spotUsdc, { total: Number(usdc.total), hold: Number(usdc.hold) });
++  const noUsdc = await importHyperliquid(ADDR, { fetchImpl: fetchFor(perps, { mode: 'unifiedAccount', spot: { balances: [] } }) });
++  assert.equal(noUsdc.reported.spotUsdc.total, 0);
+ });
+ 
+ test('a Hyperliquid vault address is rejected as not a user account', async () => {
+diff --git a/web/adapters/hyperliquid.mjs b/web/adapters/hyperliquid.mjs
+index 7a80b88..27c67fb 100644
+--- a/web/adapters/hyperliquid.mjs
++++ b/web/adapters/hyperliquid.mjs
+@@ -10,25 +10,34 @@ const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch, now = Date.now, timeoutMs = 8000 } = {}) {
+   if (typeof address !== 'string' || !ADDRESS.test(address)) throw new AdapterError('INVALID_ADDRESS', 'Enter a Hyperliquid address: 0x followed by 40 hex characters');
+   const options = { method: 'POST', fetchImpl, timeoutMs };
+-  const [state, mids, abstraction, vault] = await Promise.all([
++  const [state, mids, abstraction, vault, spot] = await Promise.all([
+     requestJson(HL_INFO_URL, { ...options, body: { type: 'clearinghouseState', user: address } }),
+     requestJson(HL_INFO_URL, { ...options, body: { type: 'allMids' } }),
+     requestJson(HL_INFO_URL, { ...options, body: { type: 'userAbstraction', user: address } }),
+     requestJson(HL_INFO_URL, { ...options, body: { type: 'vaultDetails', vaultAddress: address } }),
++    requestJson(HL_INFO_URL, { ...options, body: { type: 'spotClearinghouseState', user: address } }),
+   ]);
+   if (vault && typeof vault === 'object') {
+     throw new AdapterError('VAULT_ADDRESS', `This address is a Hyperliquid vault (${String(vault.name ?? 'unnamed')}), not a user account; enter the address that holds your positions`);
+   }
+   const accountMode = typeof abstraction === 'string' ? abstraction : null;
+-  if (accountMode !== 'disabled' && accountMode !== 'default') {
+-    const where = accountMode === 'unifiedAccount' || accountMode === 'portfolioMargin' ? 'unified and portfolio-margin accounts keep USDC in the spot balance, which this planner does not read' : 'this abstraction mode is not modelled';
+-    throw new AdapterError('UNSUPPORTED_ACCOUNT_MODE', `Hyperliquid account mode "${accountMode ?? 'unknown'}" is not supported: ${where}. ExitPlan plans Standard accounts today (abstraction disabled or default); Unified is next`);
++  const unified = accountMode === 'unifiedAccount';
++  if (accountMode !== 'disabled' && accountMode !== 'default' && !unified) {
++    const where = accountMode === 'portfolioMargin' ? 'portfolio margin pools several collateral assets, which this planner does not model' : 'this abstraction mode is not modelled';
++    throw new AdapterError('UNSUPPORTED_ACCOUNT_MODE', `Hyperliquid account mode "${accountMode ?? 'unknown'}" is not supported: ${where}. Standard and Unified accounts are supported`);
+   }
+   record(state, 'clearinghouseState');
+   record(mids, 'allMids');
+   const summary = record(state.marginSummary, 'marginSummary');
+-  const accountValue = decimal(summary.accountValue, 'accountValue');
+-  const withdrawable = decimal(state.withdrawable, 'withdrawable');
++  const perpsAccountValue = decimal(summary.accountValue, 'accountValue');
++  const perpsWithdrawable = decimal(state.withdrawable, 'withdrawable');
++  // Spot USDC: separate from perps on a standard account; backs the perps on a unified account (hold = margin in use).
++  const spotBalances = spot && Array.isArray(spot.balances) ? spot.balances : [];
++  const usdcEntry = spotBalances.find((b) => b && b.coin === 'USDC');
++  const spotUsdc = { total: usdcEntry ? decimal(usdcEntry.total, 'spot USDC total') : 0, hold: usdcEntry ? decimal(usdcEntry.hold ?? 0, 'spot USDC hold') : 0 };
++  const freeSpotUsdc = Math.max(0, spotUsdc.total - spotUsdc.hold);
++  const accountValue = unified ? freeSpotUsdc + perpsAccountValue : perpsAccountValue;
++  const withdrawable = unified ? round2(freeSpotUsdc + perpsWithdrawable) : perpsWithdrawable;
+   if (!Array.isArray(state.assetPositions)) throw new AdapterError('INVALID_RESPONSE', 'assetPositions is missing');
+   if (!Object.hasOwn(mids, 'SOL')) throw new AdapterError('INVALID_RESPONSE', 'SOL mid price is missing');
+   let markPrice = round2(decimal(mids.SOL, 'SOL mid'));
+@@ -69,7 +78,9 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
+   const modelHeadroom = (collateralCents - required) / 100;
+   const freeWithdrawable = Math.max(0, Math.min(round2(withdrawable), modelHeadroom));
+   const assumptions = [
+-    accountMode === 'disabled' ? 'Account mode verified on HyperCore: standard (abstraction disabled)' : 'Account mode reported as "default" on HyperCore (no abstraction chosen); treated as a standard account',
++    unified
++      ? 'Unified account verified on HyperCore: the spot USDC balance backs the perps; equity = free spot USDC + perps equity, and USDC held for other positions is treated as locked'
++      : accountMode === 'disabled' ? 'Account mode verified on HyperCore: standard (abstraction disabled)' : 'Account mode reported as "default" on HyperCore (no abstraction chosen); treated as a standard account',
+     'Reserve is 10% of short notional, a model assumption, not the exchange maintenance margin',
+     'Margin used by other open positions is treated as locked and deducted from equity',
+   ];
+@@ -81,7 +92,7 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
+     observedAt: new Date(now()).toISOString(),
+     source: 'Hyperliquid public info API',
+     state: { accountMode: 'standard', marginMode: 'cross', asset: 'SOL', shortSol, markPrice, collateral, conservativeMarginRate: HL_RESERVE_RATE, freeWithdrawable },
+-    reported: { accountMode, accountValue, withdrawable, marginUsed: decimal(summary.totalMarginUsed ?? 0, 'totalMarginUsed'), ...solReport, otherPositions },
++    reported: { accountMode, accountValue, withdrawable, spotUsdc, marginUsed: decimal(summary.totalMarginUsed ?? 0, 'totalMarginUsed'), ...solReport, otherPositions },
+     assumptions,
+   };
+ }
+diff --git a/web/app.mjs b/web/app.mjs
+index 82c4a8e..f11beee 100644
+--- a/web/app.mjs
++++ b/web/app.mjs
+@@ -838,8 +838,43 @@ function renderSource() {
+     ? `Planning uses the Jupiter quote SOL ${money(portfolio.solana.solPrice, true)}`
+     : 'Planning assumes SOL $100';
+   $('.guide').toggleAttribute('hidden', isImported);
++  renderPreflight();
+   $('#share-link').disabled = !imported;
+ }
++function renderPreflight() {
++  const panel = $('#preflight');
++  if (portfolio.evidence !== 'imported' || !imported) {
++    panel.toggleAttribute('hidden', true);
++    return;
++  }
++  const hl = imported.hyperliquid, so = imported.solana;
++  const items = [];
++  const push = (status, label, detail) => items.push({ status, label, detail });
++  if (hl.reported.accountMode === 'disabled') push('ok', 'Account mode', 'verified on HyperCore: standard (abstraction disabled)');
++  else if (hl.reported.accountMode === 'unifiedAccount') push('ok', 'Account mode', `verified on HyperCore: unified account (spot USDC ${money(hl.reported.spotUsdc.total, true)} backs the perps, ${money(hl.reported.spotUsdc.hold, true)} held)`);
++  else push('warn', 'Account mode', 'reported as default on HyperCore; treated as standard, not proven');
++  const exposure = portfolio.solana.sol - portfolio.hyperliquid.shortSol;
++  if (Math.abs(exposure) < 0.000001) push('ok', 'Net exposure', '0 SOL: spot and short balanced');
++  else push('warn', 'Net exposure', `${num(exposure)} SOL: not neutral (spot ${num(portfolio.solana.sol)}, short ${num(portfolio.hyperliquid.shortSol)}); keep-net-exposure preserves this`);
++  if (portfolio.hyperliquid.shortSol > 0 && hl.reported.liquidationPrice) {
++    const distance = (hl.reported.liquidationPrice - portfolio.hyperliquid.markPrice) / portfolio.hyperliquid.markPrice;
++    push(distance >= 0.25 ? 'ok' : 'warn', 'Liquidation', `${money(hl.reported.liquidationPrice, true)} vs mark ${money(portfolio.hyperliquid.markPrice, true)} (+${(distance * 100).toFixed(0)}% away), SOL only`);
++  } else push('info', 'Liquidation', 'no SOL short, no liquidation price');
++  const buffer = initialHlBuffer();
++  if (buffer < constraints.minHlBuffer) push('warn', 'HL margin buffer', `${money(buffer, true)} is under your ${money(constraints.minHlBuffer)} floor: HL withdrawals blocked, Solana routes work`);
++  else push('ok', 'HL margin buffer', `${money(buffer, true)} above your ${money(constraints.minHlBuffer)} floor (exchange reported ${money(hl.reported.withdrawable, true)} withdrawable)`);
++  const liquidity = so.reported.reserveLiquidity, deposit = portfolio.solana.lending.usdc;
++  if (deposit <= 0) push('info', 'Kamino liquidity', 'no Kamino deposit to withdraw');
++  else if (liquidity >= deposit) push('ok', 'Kamino liquidity', `${money(liquidity)} available in the USDC reserve vs your ${money(deposit, true)} deposited`);
++  else push('warn', 'Kamino liquidity', `only ${money(liquidity)} withdrawable now vs your ${money(deposit, true)} deposited`);
++  const walletUsdc = portfolio.solana.wallet.usdc;
++  push(walletUsdc > 0 ? 'ok' : 'info', 'Wallet USDC', walletUsdc > 0 ? `${money(walletUsdc, true)} used first at zero fee` : 'none in the wallet');
++  if (hl.reported.otherPositions.length) push('info', 'Other Hyperliquid positions', `${hl.reported.otherPositions.map((p) => p.coin).join(', ')}: margin treated as locked`);
++  push('info', 'Not simulated', 'Hyperliquid order and withdrawal legs; HL → Solana CCTP delivery fee');
++  $('#preflight-items').innerHTML = items.map((i) => `<li class="${i.status}"><b>${esc(i.label)}</b> · ${esc(i.detail)}</li>`).join('');
++  $('#preflight-badge').textContent = evidenceLabel();
++  panel.toggleAttribute('hidden', false);
++}
+ function setSource(mode) {
+   sourceMode = mode;
+   $('#source-import').checked = mode === 'import';

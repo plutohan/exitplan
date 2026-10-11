@@ -82,7 +82,7 @@ function validate(portfolio, supplied) {
   if (typeof s?.borrow?.enabled !== 'boolean') errors.push('solana.borrow.enabled must be boolean.');
   number(s?.borrow?.capacity, 'solana.borrow.capacity');
   number(s?.borrow?.maxLtv, 'solana.borrow.maxLtv', { max: 1, scale: 10_000 });
-  if (h?.accountMode !== 'standard') errors.push('Unsupported Hyperliquid account mode; only the standard-account scenario is supported.');
+  if (h?.accountMode !== 'standard' && h?.accountMode !== 'unified') errors.push('Unsupported Hyperliquid account mode; only standard and unified accounts are supported.');
   if (h?.marginMode !== 'cross') errors.push('Unsupported Hyperliquid margin mode; isolated and strict-isolated scenarios are not supported.');
   if (h?.asset !== 'SOL') errors.push('Only a single SOL short is supported in the Hyperliquid scenario.');
   number(h?.shortSol, 'hyperliquid.shortSol', { scale: UNITS, max: 1_000_000 });

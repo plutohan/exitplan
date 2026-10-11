@@ -35,9 +35,25 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
   const spotBalances = spot && Array.isArray(spot.balances) ? spot.balances : [];
   const usdcEntry = spotBalances.find((b) => b && b.coin === 'USDC');
   const spotUsdc = { total: usdcEntry ? decimal(usdcEntry.total, 'spot USDC total') : 0, hold: usdcEntry ? decimal(usdcEntry.hold ?? 0, 'spot USDC hold') : 0 };
-  const freeSpotUsdc = Math.max(0, spotUsdc.total - spotUsdc.hold);
-  const accountValue = unified ? freeSpotUsdc + perpsAccountValue : perpsAccountValue;
-  const withdrawable = unified ? round2(freeSpotUsdc + perpsWithdrawable) : perpsWithdrawable;
+  // Unified: the spot USDC total already contains the perps equity (margin plus unrealised PnL); `hold` is the part the
+  // exchange keeps back (perps equity minus perps withdrawable, plus holds for open spot orders). Equity = total minus any
+  // hold that is not explained by the perps; withdrawable = total minus hold. Both are the exchange's own figures.
+  const perpsHeld = Math.max(0, perpsAccountValue - perpsWithdrawable);
+  const residualHold = unified ? Math.max(0, spotUsdc.hold - perpsHeld) : 0;
+  const accountValue = unified ? spotUsdc.total - residualHold : perpsAccountValue;
+  const withdrawable = unified ? round2(Math.max(0, spotUsdc.total - spotUsdc.hold)) : perpsWithdrawable;
+  if (unified && Array.isArray(spot?.tokenToAvailableAfterMaintenance) && state.crossMaintenanceMarginUsed != null) {
+    const entry = spot.tokenToAvailableAfterMaintenance.find((e) => Array.isArray(e) && e[0] === 0);
+    if (entry) {
+      const available = decimal(entry[1], 'USDC available after maintenance');
+      const maintenance = decimal(state.crossMaintenanceMarginUsed, 'crossMaintenanceMarginUsed');
+      const implied = spotUsdc.total - maintenance;
+      if (Math.abs(implied - available) > 1) throw new AdapterError('INVALID_RESPONSE', `Unified account cross-check failed: spot USDC total minus cross maintenance margin ($${round2(implied).toFixed(2)}) does not match the exchange's available-after-maintenance figure ($${round2(available).toFixed(2)}); the equity model does not fit this account`);
+    }
+  }
+  const otherStables = spotBalances.filter((b) => b && ['USDT0', 'USDT', 'USDH', 'USDE', 'USDC.e'].includes(b.coin) && Number(b.total) > 0).map((b) => ({ coin: String(b.coin), total: decimal(b.total, `${b.coin} total`) }));
+  const spotSolEntry = spotBalances.find((b) => b && b.coin === 'USOL');
+  const spotSol = spotSolEntry ? decimal(spotSolEntry.total, 'USOL total') : 0;
   if (!Array.isArray(state.assetPositions)) throw new AdapterError('INVALID_RESPONSE', 'assetPositions is missing');
   if (!Object.hasOwn(mids, 'SOL')) throw new AdapterError('INVALID_RESPONSE', 'SOL mid price is missing');
   let markPrice = round2(decimal(mids.SOL, 'SOL mid'));
@@ -63,12 +79,20 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
       solMarginUsed: decimal(sol.marginUsed, 'SOL margin used'),
     };
   }
-  const otherPositions = positions.filter(position => position.coin !== 'SOL').map(position => ({
-    coin: String(position.coin),
-    size: decimal(position.szi, `${position.coin} size`),
-    marginUsed: decimal(position.marginUsed, `${position.coin} margin used`),
-  }));
-  const locked = otherPositions.reduce((sum, position) => sum + position.marginUsed, 0);
+  // The exchange's transfer rule keeps max(initial margin, 10% of notional) per position; locking that for the other
+  // positions makes the model's free collateral match the exchange's reported withdrawable on real accounts.
+  const otherPositions = positions.filter(position => position.coin !== 'SOL').map(position => {
+    const marginUsed = decimal(position.marginUsed, `${position.coin} margin used`);
+    const notional = position.positionValue == null ? null : Math.abs(decimal(position.positionValue, `${position.coin} position value`));
+    return {
+      coin: String(position.coin),
+      size: decimal(position.szi, `${position.coin} size`),
+      marginUsed,
+      notional,
+      lockedMargin: round2(Math.max(marginUsed, notional == null ? 0 : notional * HL_RESERVE_RATE)),
+    };
+  });
+  const locked = round2(otherPositions.reduce((sum, position) => sum + position.lockedMargin, 0));
   const collateral = round2(accountValue - locked);
   const collateralCents = Math.round(collateral * 100);
   const required = requiredMarginCents(shortSol, markPrice, HL_RESERVE_RATE);
@@ -79,11 +103,13 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
   const freeWithdrawable = Math.max(0, Math.min(round2(withdrawable), modelHeadroom));
   const assumptions = [
     unified
-      ? 'Unified account verified on HyperCore: the spot USDC balance backs the perps; equity = free spot USDC + perps equity, and USDC held for other positions is treated as locked'
+      ? 'Unified account verified on HyperCore: the spot USDC total is the account equity (it already contains the perps margin and unrealised PnL); withdrawable is spot USDC total minus hold, both exchange figures'
       : accountMode === 'disabled' ? 'Account mode verified on HyperCore: standard (abstraction disabled)' : 'Account mode reported as "default" on HyperCore (no abstraction chosen); treated as a standard account',
     'Reserve is 10% of short notional, a model assumption, not the exchange maintenance margin',
-    'Margin used by other open positions is treated as locked and deducted from equity',
+    "Other open positions lock the larger of their initial margin and 10% of their notional (the exchange's transfer rule), deducted from equity",
   ];
+  if (otherStables.length) assumptions.push(`Other stable collateral on HyperCore spot (${otherStables.map((s) => `${s.coin} ${s.total.toLocaleString('en-US', { maximumFractionDigits: 2 })}`).join(', ')}) is not modelled`);
+  if (spotSol > 0) assumptions.push(`HyperCore spot holds ${spotSol} USOL; it is not counted as Solana spot SOL`);
   if (round2(withdrawable) < modelHeadroom) assumptions.push(`The exchange reported $${round2(withdrawable).toFixed(2)} withdrawable at load; collateral released by reducing the short is a model estimate, not an exchange quote`);
   return {
     evidence: 'imported',
@@ -91,8 +117,8 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
     address,
     observedAt: new Date(now()).toISOString(),
     source: 'Hyperliquid public info API',
-    state: { accountMode: 'standard', marginMode: 'cross', asset: 'SOL', shortSol, markPrice, collateral, conservativeMarginRate: HL_RESERVE_RATE, freeWithdrawable },
-    reported: { accountMode, accountValue, withdrawable, spotUsdc, marginUsed: decimal(summary.totalMarginUsed ?? 0, 'totalMarginUsed'), ...solReport, otherPositions },
+    state: { accountMode: unified ? 'unified' : 'standard', marginMode: 'cross', asset: 'SOL', shortSol, markPrice, collateral, conservativeMarginRate: HL_RESERVE_RATE, freeWithdrawable },
+    reported: { accountMode, accountValue: round2(accountValue), withdrawable, spotUsdc, lockedMargin: locked, otherStables, spotSol, marginUsed: decimal(summary.totalMarginUsed ?? 0, 'totalMarginUsed'), ...solReport, otherPositions },
     assumptions,
   };
 }
