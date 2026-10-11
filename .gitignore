@@ -8,3 +8,4 @@ node_modules/
 .superpowers/
 .env*
 !.env.example
+node_modules
