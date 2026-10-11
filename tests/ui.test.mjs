@@ -20,6 +20,7 @@ const hlShort = await loadFixture('hl-sol-short');
 const hlNoPosition = await loadFixture('hl-no-position');
 const hlUnifiedPerps = await loadFixture('hl-unified-perps');
 const hlUnifiedSpot = await loadFixture('hl-unified-spot');
+const hlFunding = await loadFixture('hl-funding-history');
 const kaminoFixture = await loadFixture('kamino-obligations');
 const jupiterFixture = await loadFixture('jupiter-quote');
 const WALLET = 'DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK';
@@ -28,9 +29,9 @@ const EXTERNAL_HOSTS = ['api.hyperliquid.xyz', 'solana-rpc.publicnode.com', 'api
 const external = ({ hl = hlShort, kamino = kaminoFixture, jupiter = jupiterFixture, lamports = 3_219_600_000, fail = null, mode = 'disabled', spot = { balances: [] } } = {}) => async call => {
   const target = new URL(call.url);
   if (fail && target.host === fail) return new Response('down', { status: 500 });
-  if (target.host === 'api.hyperliquid.xyz') { const type = JSON.parse(call.body).type; return json(type === 'allMids' ? { SOL: '109.695' } : type === 'userAbstraction' ? mode : type === 'vaultDetails' ? null : type === 'spotClearinghouseState' ? spot : hl); }
+  if (target.host === 'api.hyperliquid.xyz') { const type = JSON.parse(call.body).type; return json(type === 'allMids' ? { SOL: '109.695' } : type === 'userAbstraction' ? mode : type === 'vaultDetails' ? null : type === 'spotClearinghouseState' ? spot : type === 'fundingHistory' ? hlFunding : hl); }
   if (target.host === 'solana-rpc.publicnode.com') return json({ jsonrpc: '2.0', id: 1, result: { context: { slot: 1 }, value: lamports } });
-  if (target.host === 'api.kamino.finance' && target.pathname.endsWith('/reserves/metrics')) return json([{ reserve: 'D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59', totalSupply: '120702201.4', totalBorrow: '112626977.24' }]);
+  if (target.host === 'api.kamino.finance' && target.pathname.endsWith('/reserves/metrics')) return json([{ reserve: 'D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59', totalSupply: '120702201.4', totalBorrow: '112626977.24', supplyApy: '0.0468228385' }]);
   if (target.host === 'api.kamino.finance') return json(kamino);
   if (target.host === 'lite-api.jup.ag' && target.pathname.startsWith('/ultra/v1/balances/')) return json({ SOL: { uiAmount: 3.2196 }, EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v: { uiAmount: 336.4 } });
   if (target.host === 'lite-api.jup.ag') return json(jupiter);
@@ -518,7 +519,7 @@ test('import by address loads both venues, labels plans IMPORTED and uses the qu
   assert.match(ui.get('.demo-label').textContent, /Imported/);
   assert.match(ui.get('.demo-label').textContent, /No real transactions/);
   assert.equal(ui.get('#load-positions').disabled, false);
-  assert.equal(ui.calls.filter(call => EXTERNAL_HOSTS.includes(call.host)).length, 10); // balance, Kamino obligations, Kamino reserve metrics, quote, wallet balances, clearinghouse, mids, account mode, vault check, spot balances
+  assert.equal(ui.calls.filter(call => EXTERNAL_HOSTS.includes(call.host)).length, 11); // balance, Kamino obligations, Kamino reserve metrics, quote, wallet balances, clearinghouse, mids, account mode, vault check, spot balances, funding history
   assert.match(ui.get('#import-status').textContent, /\$336\.40 in wallet/);
   assertNoExecutionCalls(ui);
 });
@@ -998,4 +999,19 @@ test('a unified account with USDC but no SOL short gets the empty-position hint,
   assert.match(ui.get('#import-status').textContent, /no SOL position/);
   const exposure = [...ui.document.querySelectorAll('#preflight-items li')].find(li => /Net exposure/.test(li.textContent));
   assert.match(exposure.textContent, /4 USOL/);
+});
+
+test('plan cards show the yearly carry each route gives up, in the scenario and after an import', async t => {
+  const ui = await mount(t, { externalResponse: external() });
+  const best = ui.get('.plan-card');
+  assert.match(best.textContent, /Carry given up/);
+  assert.match(best.textContent, /\$100\.01\/yr/);
+  await importPositions(ui);
+  const cards = [...ui.document.querySelectorAll('.plan-card')];
+  assert.ok(cards.some(card => /Carry given up/.test(card.textContent) && /\/yr/.test(card.textContent)), 'imported routes carry a figure');
+  const carry = [...ui.document.querySelectorAll('#preflight-items li')].find(li => /^Carry/.test(li.textContent.trim()));
+  assert.ok(carry, 'readout has a carry item');
+  assert.match(carry.textContent, /funding/);
+  assert.match(carry.textContent, /4\.68% APY/);
+  assert.match(carry.textContent, /7-day average/);
 });

@@ -26,14 +26,14 @@ export function createDemoPortfolio() {
     snapshot: { complete: true, ageSeconds: 0, maxAgeSeconds: 300 },
     solana: {
       sol: 100, solPrice: 100,
-      lending: { usdc: 3000, debt: 0, withdrawCapacity: 3000 },
+      lending: { usdc: 3000, debt: 0, withdrawCapacity: 3000, supplyApy: 0.05 },
       wallet: { usdc: 0 },
       borrow: { enabled: true, capacity: 3000, maxLtv: 0.3 }
     },
     hyperliquid: {
       accountMode: 'standard', marginMode: 'cross', asset: 'SOL',
       shortSol: 100, markPrice: 100, collateral: 4000,
-      conservativeMarginRate: 0.1, freeWithdrawable: 3000
+      conservativeMarginRate: 0.1, freeWithdrawable: 3000, fundingApr: 0.08
     },
     fees: {
       lendingWithdraw: 0.25, solSaleBps: 30, hlCloseBps: 5,
@@ -90,6 +90,10 @@ function validate(portfolio, supplied) {
   if (h?.markPrice === 0) errors.push('Hyperliquid mark price must be positive.');
   number(h?.conservativeMarginRate, 'hyperliquid.conservativeMarginRate', { max: 1, scale: 10_000 });
   if (h?.conservativeMarginRate === 0) errors.push('Conservative margin rate must be positive.');
+  // Carry rates are optional (null or absent = unknown); when present they must be finite and plausible.
+  const rate = (value, label, min, max) => { if (value === undefined || value === null) return; if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) errors.push(`${label} must be a finite number between ${min} and ${max}, or null when unknown.`); };
+  rate(h?.fundingApr, 'hyperliquid.fundingApr', -5, 5);
+  rate(s?.lending?.supplyApy, 'solana.lending.supplyApy', 0, 5);
   if (s?.sol * s?.solPrice > 1_000_000_000 || h?.shortSol * h?.markPrice > 1_000_000_000) errors.push('Position notional exceeds the supported scenario range.');
   for (const key of ['lendingWithdraw', 'hlTransfer', 'borrowFixed']) number(f?.[key], `fees.${key}`);
   for (const key of ['solSaleBps', 'hlCloseBps', 'borrowAprBps']) number(f?.[key], `fees.${key}`, { max: 10_000, scale: 1 });
@@ -128,6 +132,9 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
   const ltvBps = Math.round(s.borrow.maxLtv * 10_000);
   const fixedLendingFee = cents(f.lendingWithdraw), fixedTransferFee = cents(f.hlTransfer), fixedBorrowFee = cents(f.borrowFixed);
   const notional = (q, p = price) => mulFloor(q, p, UNITS);
+  // Carry given up per year, truncated toward zero: funding on the short reduced (positive funding = shorts earn) plus supply yield on the deposit withdrawn.
+  const fundingBps = h.fundingApr == null ? null : Math.round(h.fundingApr * 10_000);
+  const supplyBps = s.lending.supplyApy == null ? null : Math.round(s.lending.supplyApy * 10_000);
   const requiredMargin = short => feeFor(mulCeil(short, mark, UNITS), marginBps);
   const originalRequired = requiredMargin(initialShort);
   const initialBuffer = initialCollateral - originalRequired;
@@ -182,6 +189,9 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
     if (a.hl > hlCapacity(a.closed)) rejections.push('HL withdrawal exceeds the scenario removable collateral limit.');
     if (a.borrowed > borrowCapacity(a.sold)) rejections.push('Borrow amount exceeds the comparison-only collateral capacity.');
     const totalFees = proceedsFees + collateralFees;
+    const fundingCarry = a.closed ? (fundingBps == null ? null : mulFloor(notional(a.closed, mark), fundingBps, 10_000)) : 0;
+    const lendingCarry = a.lending ? (supplyBps == null ? null : mulFloor(a.lending, supplyBps, 10_000)) : 0;
+    const carryPerYear = fundingCarry == null || lendingCarry == null ? null : fundingCarry + lendingCarry;
     const feeBreakdown = {
       lendingWithdrawal: dollars(a.lending ? fixedLendingFee : 0),
       spotSale: dollars(feeFor(notional(a.sold), f.solSaleBps)),
@@ -204,6 +214,8 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
       borrowAprBps: f.borrowAprBps,
       borrowDailyCarryEstimate: dollars(mulCeil(a.borrowed, f.borrowAprBps, 3_650_000)),
       borrowCarryEstimate: a.borrowed ? null : 0,
+      carryPerYear: carryPerYear == null ? null : dollars(carryPerYear),
+      carryBreakdown: { funding: fundingCarry == null ? null : dollars(fundingCarry), lendingYield: lendingCarry == null ? null : dollars(lendingCarry) },
       feasible: rejections.length === 0, rejections, evidence, executionSupported: false,
       comparisonOnly: true,
       limitations: a.borrowed ? ['Borrowing is a hypothetical fixture comparison; no borrowing adapter is implemented.', 'Total carry cannot be estimated without a repayment horizon. Daily interest uses the fixture APR; the cash-arrival deadline is not a loan holding period.'] : []

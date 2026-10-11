@@ -51,6 +51,8 @@ lendingAfter, feasible, rejections, evidence, executionSupported
 
 Steps are `{ venue, action, amount, unit }` objects. Additional auditable fields include `family`, `grossProceeds`, `feeBreakdown`, `feesFromProceeds`, `feesFromCollateral`, `solSold`, `shortReduced`, `solPledgedAfter`, `existingDebt`, `debtAfter`, `estimatedHours`, `borrowAprBps`, `borrowDailyCarryEstimate`, `borrowCarryEstimate`, `comparisonOnly`, and `limitations`.
 
+`carryPerYear` is the yearly carry a route gives up at the supplied rates: short reduced × mark × `fundingApr` plus lending withdrawn × `supplyApy`, truncated toward zero in cents, with `carryBreakdown: { funding, lendingYield }`; it is `null` when a leg the route uses has an unknown (`null` or absent) rate, zero for routes that touch neither, negative when funding is negative (reducing the short saves carry). Rates are validated to be finite and within −5..5 (funding) or 0..5 (supply). Carry never affects ranking.
+
 `solAfter` is total retained SOL, including any hypothetically pledged SOL. `solPledgedAfter` is the minimum collateral quantity for the hypothetical borrowing capacity; this is not an implemented collateral transfer. `borrowCarryEstimate` is `null` when debt is created because no repayment horizon was supplied, and zero otherwise. `borrowDailyCarryEstimate` estimates one day's interest at the fixture APR. It is not charged against immediate cash or included in upfront fees.
 
 ## Explicit synthetic fixture
@@ -63,6 +65,7 @@ Steps are `{ venue, action, amount, unit }` objects. Additional auditable fields
 - Hypothetical borrowing comparison: up to $3,000 at 30% LTV against retained SOL; no borrowing adapter exists
 - Fees: lending withdrawal $0.25; SOL sale 30 bps; short reduction 5 bps; HL-to-Solana transfer $1; loan origination $0.50
 - Borrow APR: 800 bps (8%), an invented rate
+- Carry rates: `hyperliquid.fundingApr` 0.08 and `solana.lending.supplyApy` 0.05 per year, invented; adapters supply real values or `null` when unknown
 - Sequential durations: lending withdrawal 0.1 hours; trade bundle 0.1 hours; HL transfer 0.5 hours; borrowing 0.1 hours
 - Snapshot: complete, age 0 seconds, maximum accepted age 300 seconds
 

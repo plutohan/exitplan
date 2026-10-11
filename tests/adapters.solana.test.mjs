@@ -73,7 +73,7 @@ test('rejects a mixed-asset obligation', async () => {
 
 test('a wallet with no Kamino obligation imports zero lending', async () => {
   const result = await importSolana(WALLET, { fetchImpl: fetchFor({ obligations: [], quote: await fixture('jupiter-quote') }) });
-  assert.deepEqual(result.state.lending, { usdc: 0, debt: 0, withdrawCapacity: 0 });
+  assert.deepEqual(result.state.lending, { usdc: 0, debt: 0, withdrawCapacity: 0, supplyApy: null });
 });
 
 test('rejects malformed address without fetching', async () => {
@@ -142,4 +142,15 @@ test('only the vanilla obligation is modelled; other obligations are ignored and
   onlyOther.obligations[0].obligationTag = 1; onlyOther.obligations[0].humanTag = 'Multiply';
   const none = await importSolana(WALLET, { fetchImpl: fetchFor(onlyOther) });
   assert.equal(none.state.lending.usdc, 0);
+});
+
+test('imports the USDC reserve supply APY for carry, null when the metrics omit it', async () => {
+  const data = { obligations: await fixture('kamino-obligations'), quote: await fixture('jupiter-quote') };
+  const withApy = await importSolana(WALLET, { fetchImpl: fetchFor({ ...data, metrics: [{ ...DEFAULT_METRICS[0], supplyApy: '0.0468228385' }] }) });
+  assert.equal(withApy.state.lending.supplyApy, 0.046823);
+  assert.ok(withApy.assumptions.some(line => /supply APY/.test(line) && /4\.68%/.test(line)), withApy.assumptions.join(' | '));
+  const without = await importSolana(WALLET, { fetchImpl: fetchFor(data) });
+  assert.equal(without.state.lending.supplyApy, null);
+  const bad = await importSolana(WALLET, { fetchImpl: fetchFor({ ...data, metrics: [{ ...DEFAULT_METRICS[0], supplyApy: 'x' }] }) });
+  assert.equal(bad.state.lending.supplyApy, null);
 });

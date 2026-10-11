@@ -84,6 +84,8 @@ export async function importSolana(address, { fetchImpl = globalThis.fetch, now 
   if (!usdcReserve) throw new AdapterError('INVALID_RESPONSE', 'Kamino USDC reserve metrics are missing');
   const liquidity = Math.max(0, round2(decimal(usdcReserve.totalSupply, 'USDC reserve supply') - decimal(usdcReserve.totalBorrow, 'USDC reserve borrows')));
   const withdrawCapacity = Math.min(usdc, liquidity);
+  const supplyApyNumber = Number(usdcReserve.supplyApy);
+  const supplyApy = usdcReserve.supplyApy == null || !Number.isFinite(supplyApyNumber) || supplyApyNumber < 0 ? null : round6(supplyApyNumber);
   const solPrice = round2(outAmount / 1e6);
   return {
     evidence: 'imported',
@@ -93,7 +95,7 @@ export async function importSolana(address, { fetchImpl = globalThis.fetch, now 
     state: {
       sol,
       solPrice,
-      lending: { usdc, debt, withdrawCapacity },
+      lending: { usdc, debt, withdrawCapacity, supplyApy },
       wallet: { usdc: walletUsdc },
       borrow: { enabled: true, capacity: round2(sol * solPrice * BORROW_LTV), maxLtv: BORROW_LTV },
     },
@@ -102,6 +104,7 @@ export async function importSolana(address, { fetchImpl = globalThis.fetch, now 
     sources: ['publicnode RPC getBalance', 'Kamino main-market obligations API', 'Kamino reserve metrics (USDC liquidity)', 'Jupiter quote for 1 SOL → USDC', 'Jupiter wallet token balances (USDC in the wallet)'],
     assumptions: [
       `Withdraw capacity is capped by the USDC reserve liquidity at load ($${liquidity.toLocaleString('en-US', { maximumFractionDigits: 0 })} available)`,
+      supplyApy == null ? 'Kamino USDC supply APY unavailable at load; carry on the deposit is unknown' : `Carry uses the Kamino USDC reserve supply APY at load (${(supplyApy * 100).toFixed(2)}%); it is an estimate at today's rate`,
       'Borrow capacity is 30% of SOL value, a model rule, not a Kamino quote',
       'Sales are priced from a 1 SOL Jupiter quote plus the fee rule; the rehearsal re-quotes the exact amount',
       ...(ignored.length ? [`${ignored.length} other obligation${ignored.length === 1 ? '' : 's'} (${ignored.join(', ')}) ignored: only the vanilla obligation is modelled and rehearsed`] : []),

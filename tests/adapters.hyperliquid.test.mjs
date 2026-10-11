@@ -15,6 +15,7 @@ const fetchFor = (state, options = {}) => async (url, init) => {
   if (body.type === 'vaultDetails') { assert.equal(body.vaultAddress, ADDR); return Response.json(options.vault ?? null); }
   if (body.type === 'spotClearinghouseState') { assert.equal(body.user, ADDR); return Response.json(options.spot ?? { balances: [] }); }
   if (body.type === 'clearinghouseState') { assert.equal(body.user, ADDR); return Response.json(state); }
+  if (body.type === 'fundingHistory') { assert.equal(body.coin, 'SOL'); assert.ok(Number.isInteger(body.startTime)); if (options.funding === 'error') return new Response('boom', { status: 500 }); return Response.json(options.funding ?? await fixture('hl-funding-history')); }
   assert.fail('unexpected request ' + init.body);
 };
 const solPosition = state => state.assetPositions.find(a => a.position.coin === 'SOL');
@@ -209,4 +210,22 @@ test('other positions lock max(initial margin, 10% of notional), which matches t
   }
   assert.equal(unified.reported.lockedMargin, 108035.6);
   assert.equal(standard.reported.lockedMargin, 12818.25);
+});
+
+test('imports the 7-day average SOL funding as an annual rate, and degrades to unknown when the history is unavailable', async () => {
+  const state = await fixture('hl-sol-short');
+  const history = await fixture('hl-funding-history');
+  const mean = history.reduce((sum, h) => sum + Number(h.fundingRate), 0) / history.length;
+  const result = await importHyperliquid(ADDR, { fetchImpl: fetchFor(state) });
+  assert.equal(result.state.fundingApr, Math.round(mean * 24 * 365 * 1e6) / 1e6);
+  assert.deepEqual(result.reported.funding, { samples: history.length, hourlyMean: Math.round(mean * 1e10) / 1e10, apr: result.state.fundingApr });
+  assert.ok(result.assumptions.some(line => /7-day average/.test(line) && /funding/.test(line)), result.assumptions.join(' | '));
+  const down = await importHyperliquid(ADDR, { fetchImpl: fetchFor(state, { funding: 'error' }) });
+  assert.equal(down.state.fundingApr, null);
+  assert.equal(down.reported.funding, null);
+  assert.ok(down.assumptions.some(line => /funding history unavailable/i.test(line)), down.assumptions.join(' | '));
+  const empty = await importHyperliquid(ADDR, { fetchImpl: fetchFor(state, { funding: [] }) });
+  assert.equal(empty.state.fundingApr, null);
+  const garbage = await importHyperliquid(ADDR, { fetchImpl: fetchFor(state, { funding: [{ fundingRate: 'nope' }] }) });
+  assert.equal(garbage.state.fundingApr, null);
 });

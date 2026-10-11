@@ -10,12 +10,14 @@ const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 export async function importHyperliquid(address, { fetchImpl = globalThis.fetch, now = Date.now, timeoutMs = 8000 } = {}) {
   if (typeof address !== 'string' || !ADDRESS.test(address)) throw new AdapterError('INVALID_ADDRESS', 'Enter a Hyperliquid address: 0x followed by 40 hex characters');
   const options = { method: 'POST', fetchImpl, timeoutMs };
-  const [state, mids, abstraction, vault, spot] = await Promise.all([
+  const [state, mids, abstraction, vault, spot, fundingHistory] = await Promise.all([
     requestJson(HL_INFO_URL, { ...options, body: { type: 'clearinghouseState', user: address } }),
     requestJson(HL_INFO_URL, { ...options, body: { type: 'allMids' } }),
     requestJson(HL_INFO_URL, { ...options, body: { type: 'userAbstraction', user: address } }),
     requestJson(HL_INFO_URL, { ...options, body: { type: 'vaultDetails', vaultAddress: address } }),
     requestJson(HL_INFO_URL, { ...options, body: { type: 'spotClearinghouseState', user: address } }),
+    // Carry input only: a failed funding read degrades to 'unknown' instead of failing the import.
+    requestJson(HL_INFO_URL, { ...options, body: { type: 'fundingHistory', coin: 'SOL', startTime: now() - 7 * 86_400_000 } }).catch(() => undefined),
   ]);
   if (vault && typeof vault === 'object') {
     throw new AdapterError('VAULT_ADDRESS', `This address is a Hyperliquid vault (${String(vault.name ?? 'unnamed')}), not a user account; enter the address that holds your positions`);
@@ -101,6 +103,15 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
   }
   const modelHeadroom = (collateralCents - required) / 100;
   const freeWithdrawable = Math.max(0, Math.min(round2(withdrawable), modelHeadroom));
+  let funding = null;
+  if (Array.isArray(fundingHistory) && fundingHistory.length) {
+    const rates = fundingHistory.map((entry) => Number(entry && entry.fundingRate));
+    if (rates.every((rate) => Number.isFinite(rate))) {
+      const hourlyMean = rates.reduce((sum, rate) => sum + rate, 0) / rates.length;
+      funding = { samples: rates.length, hourlyMean: Math.round(hourlyMean * 1e10) / 1e10, apr: round6(hourlyMean * 24 * 365) };
+    }
+  }
+  const fundingApr = funding ? funding.apr : null;
   const assumptions = [
     unified
       ? 'Unified account verified on HyperCore: the spot USDC total is the account equity (it already contains the perps margin and unrealised PnL); withdrawable is spot USDC total minus hold, both exchange figures'
@@ -108,6 +119,7 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
     'Reserve is 10% of short notional, a model assumption, not the exchange maintenance margin',
     "Other open positions lock the larger of their initial margin and 10% of their notional (the exchange's transfer rule), deducted from equity",
   ];
+  assumptions.push(funding ? `Carry uses the 7-day average SOL funding, ${(funding.apr * 100).toFixed(2)}% per year over ${funding.samples} hourly samples (positive means longs pay shorts); it is an estimate at today's rates` : 'SOL funding history unavailable at load; carry on the short is unknown');
   if (otherStables.length) assumptions.push(`Other stable collateral on HyperCore spot (${otherStables.map((s) => `${s.coin} ${s.total.toLocaleString('en-US', { maximumFractionDigits: 2 })}`).join(', ')}) is not modelled`);
   if (spotSol > 0) assumptions.push(`HyperCore spot holds ${spotSol} USOL; it is not counted as Solana spot SOL`);
   if (round2(withdrawable) < modelHeadroom) assumptions.push(`The exchange reported $${round2(withdrawable).toFixed(2)} withdrawable at load; collateral released by reducing the short is a model estimate, not an exchange quote`);
@@ -117,8 +129,8 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
     address,
     observedAt: new Date(now()).toISOString(),
     source: 'Hyperliquid public info API',
-    state: { accountMode: unified ? 'unified' : 'standard', marginMode: 'cross', asset: 'SOL', shortSol, markPrice, collateral, conservativeMarginRate: HL_RESERVE_RATE, freeWithdrawable },
-    reported: { accountMode, accountValue: round2(accountValue), withdrawable, spotUsdc, lockedMargin: locked, otherStables, spotSol, marginUsed: decimal(summary.totalMarginUsed ?? 0, 'totalMarginUsed'), ...solReport, otherPositions },
+    state: { accountMode: unified ? 'unified' : 'standard', marginMode: 'cross', asset: 'SOL', shortSol, markPrice, collateral, conservativeMarginRate: HL_RESERVE_RATE, freeWithdrawable, fundingApr },
+    reported: { accountMode, accountValue: round2(accountValue), withdrawable, spotUsdc, lockedMargin: locked, otherStables, spotSol, funding, marginUsed: decimal(summary.totalMarginUsed ?? 0, 'totalMarginUsed'), ...solReport, otherPositions },
     assumptions,
   };
 }

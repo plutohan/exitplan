@@ -377,3 +377,34 @@ test('a unified Hyperliquid account mode is accepted alongside standard', () => 
   portfolio.hyperliquid.accountMode = 'portfolio-margin';
   assert.ok(planExit(portfolio, defaultConstraints()).errors.some(line => /account mode/.test(line)));
 });
+
+test('each route reports the yearly carry it gives up: funding on the short reduced plus supply yield on the deposit withdrawn', () => {
+  const result = planExit(createDemoPortfolio(), defaultConstraints());
+  const byId = Object.fromEntries(result.plans.map(p => [p.id, p]));
+  assert.equal(byId['withdraw-lending'].carryPerYear, 100.01); // $2,000.25 × 5% supply APY
+  assert.deepEqual(byId['withdraw-lending'].carryBreakdown, { funding: 0, lendingYield: 100.01 });
+  assert.equal(byId['paired-unwind'].carryPerYear, 160.48); // 20.0602 SOL × $100 × 8% funding
+  assert.deepEqual(byId['paired-unwind'].carryBreakdown, { funding: 160.48, lendingYield: 0 });
+  assert.equal(byId['withdraw-hl'].carryPerYear, 0);
+  assert.equal(result.best.id, 'withdraw-lending', 'ranking stays by upfront fees');
+  const negative = createDemoPortfolio(); negative.hyperliquid.fundingApr = -0.05;
+  assert.equal(planExit(negative, defaultConstraints()).plans.find(p => p.id === 'paired-unwind').carryPerYear, -100.3, 'negative funding: reducing the short saves carry');
+  const unknown = createDemoPortfolio(); unknown.hyperliquid.fundingApr = null;
+  const plans = planExit(unknown, defaultConstraints()).plans;
+  assert.equal(plans.find(p => p.id === 'paired-unwind').carryPerYear, null);
+  assert.equal(plans.find(p => p.id === 'paired-unwind').carryBreakdown.funding, null);
+  assert.equal(plans.find(p => p.id === 'withdraw-lending').carryPerYear, 100.01, 'a route that leaves the short alone keeps its carry figure');
+  assert.equal(plans.find(p => p.id === 'withdraw-hl').carryPerYear, 0);
+});
+
+test('carry rates are validated: finite, funding within ±500%, supply APY within 0–500%, and may be absent', () => {
+  for (const [path, value] of [['hyperliquid.fundingApr', 'abc'], ['hyperliquid.fundingApr', 7], ['hyperliquid.fundingApr', -7], ['solana.lending.supplyApy', -0.1], ['solana.lending.supplyApy', Infinity]]) {
+    const p = createDemoPortfolio(); const [root, ...rest] = path.split('.'); let o = p[root]; for (const k of rest.slice(0, -1)) o = o[k]; o[rest.at(-1)] = value;
+    assert.ok(planExit(p, defaultConstraints()).errors.some(e => e.includes(path)), `${path}=${value} should be rejected`);
+  }
+  const p = createDemoPortfolio(); delete p.hyperliquid.fundingApr; delete p.solana.lending.supplyApy;
+  const r = planExit(p, defaultConstraints());
+  assert.deepEqual(r.errors, []);
+  assert.equal(r.plans.find(x => x.id === 'paired-unwind').carryPerYear, null);
+  assert.equal(r.plans.find(x => x.id === 'withdraw-lending').carryPerYear, null);
+});
