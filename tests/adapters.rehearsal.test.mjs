@@ -87,6 +87,7 @@ test('previews a short reduction by walking the live asks read-only: average pri
   const fetchImpl = async (url, init = {}) => {
     calls.push({ url, body: JSON.parse(init.body) });
     assert.equal(url, 'https://api.hyperliquid.xyz/info');
+    assert.equal(init.method, 'POST', 'the info API takes a JSON POST; a GET with a body is rejected by browsers');
     assert.deepEqual(JSON.parse(init.body), { type: 'l2Book', coin: 'SOL' });
     return Response.json(book);
   };

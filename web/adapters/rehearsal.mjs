@@ -9,7 +9,7 @@ export const HL_INFO_URL = 'https://api.hyperliquid.xyz/info';
 /** Read-only preview of buying back SOL to reduce the short: walks the live asks of the public order book. Never places an order. */
 export async function previewReduceShort({ quantity, fetchImpl = globalThis.fetch, timeoutMs = 8000 }) {
   if (!Number.isFinite(quantity) || quantity <= 0) throw new AdapterError('INVALID_AMOUNT', 'Quantity must be a positive number of SOL');
-  const book = record(await requestJson(HL_INFO_URL, { fetchImpl, timeoutMs, body: { type: 'l2Book', coin: 'SOL' } }), 'l2Book');
+  const book = record(await requestJson(HL_INFO_URL, { method: 'POST', fetchImpl, timeoutMs, body: { type: 'l2Book', coin: 'SOL' } }), 'l2Book');
   if (!Array.isArray(book.levels) || book.levels.length < 2 || !Array.isArray(book.levels[0]) || !Array.isArray(book.levels[1])) throw new AdapterError('INVALID_RESPONSE', 'l2Book levels are missing');
   const level = (entry, label) => ({ px: decimal(entry?.px, `${label} price`), sz: decimal(entry?.sz, `${label} size`) });
   const bids = book.levels[0].map((entry, i) => level(entry, `bid ${i}`));
