@@ -1,18 +1,12 @@
 # Verification — 2026-10-11
 
-Final aggregate: 109 Node tests passed, 0 failed. Generated Worker validated as ESM and its static assets/status route returned HTTP 200 in direct in-process requests.
+`node --test tests/*.test.mjs`: 147 tests passed, 0 failed.
 
-- 23 deterministic planner tests
-- 1 conservation/grid test covering 650 feasible scenario plans
-- 17 Hyperliquid adapter/import tests
-- 9 intent unit tests
-- 38 server security/intent failure tests
-- 21 LinkeDOM interaction tests executing the real app module
+- 27 engine tests (deterministic planner, imported evidence, zero-short account, reserve helper) and 1 conservation grid over 650 feasible scenario plans
+- 13 Hyperliquid adapter tests, 7 Solana adapter tests, 4 rehearsal simulation tests, all on captured real API responses in `tests/fixtures/`
+- 17 legacy server-side Hyperliquid market tests, 9 intent unit tests, 39 server security tests (origin host check, per-IP limiter, body caps, model-output validation)
+- 30 LinkeDOM tests that run the real app module: guided scenarios, controls and reset, AI proposals and late-response races, rehearsal, import by address, import failure and debt cases, import races (reset, source switch, constraint edit), read-only simulation in the rehearsal, guide hiding
 
-Behavioral coverage includes guided scenarios, input/reset, selected-plan invalidation, unavailable AI, explicit proposal confirmation, ambiguity handling, late/reordered AI responses, and interrupted/repeated rehearsals. A delayed JSON-decoding race was identified and fixed before the final run.
+Live checks on 2026-10-11 (read-only): the Solana and Hyperliquid demo addresses in `docs/demo-addresses.md` imported through the real adapters; the paired-unwind route was feasible at a $300 target; `simulateSellSol` on the unsigned Jupiter swap succeeded (about 80–92k compute units, 48 log lines). All four public hosts answered browser CORS preflights. Production at https://exitplan-rouge.vercel.app served the UI and adapters with the CSP from `vercel.json`; `/api/status` reported `aiConfigured: true` after the secrets were set.
 
-Live public-data check: Hyperliquid allMids returned SOL 109.475 at client receipt time 2026-10-11T13:42:21.340Z. No account addresses or wallet data were queried. This value is historical verification evidence, not a current price or executable quote.
-
-Not performed: browser rendering or visual QA, live OpenAI inference, real wallet reads, authoritative protocol transaction simulation, signing, trading, borrowing, bridge execution, or a production security audit. Mocked AI tests validate integration behavior, not model quality.
-
-AI requires a separately approved server-side API configuration. No API key was created, entered or stored during this build. The application fails visibly closed when unconfigured.
+Not performed: browser visual QA by automation, a production security audit, verification of Hyperliquid account modes, or any transaction submission.

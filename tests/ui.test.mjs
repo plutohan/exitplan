@@ -591,3 +591,37 @@ test('scenario rehearsal never offers a simulation', async t => {
   assert.equal(Boolean(ui.document.querySelector('#simulate-step')), false);
   assert.doesNotMatch(ui.get('#dialog-body').textContent, /Not simulated/);
 });
+
+test('switching to the scenario mid-load discards the late import', async t => {
+  const pending = deferred();
+  const ui = await mount(t, { externalResponse: call => pending.promise.then(respond => respond(call)) });
+  await importPositions(ui);
+  await ui.input('#source-scenario', true, 'change');
+  pending.resolve(external());
+  await flush(); await flush();
+  assert.equal(ui.get('.evidence-badge').textContent, 'SCENARIO');
+  assert.equal(ui.get('#sol-price').textContent, 'SOL $100.00');
+  assert.doesNotMatch(ui.get('#import-status').textContent, /Loaded/);
+});
+
+test('editing a constraint mid-load cancels the import with a clear status', async t => {
+  const pending = deferred();
+  const ui = await mount(t, { externalResponse: call => pending.promise.then(respond => respond(call)) });
+  await importPositions(ui);
+  await ui.input('#target', 1000);
+  pending.resolve(external());
+  await flush(); await flush();
+  assert.equal(ui.get('.evidence-badge').textContent, 'SCENARIO');
+  assert.match(ui.get('#import-status').textContent, /cancelled/i);
+  assert.doesNotMatch(ui.get('#import-status').textContent, /Loading/);
+  assert.equal(ui.get('#load-positions').disabled, false);
+});
+
+test('the guided scenario strip is hidden while imported positions are shown', async t => {
+  const ui = await mount(t, { externalResponse: external() });
+  assert.equal(ui.get('.guide').hasAttribute('hidden'), false);
+  await importPositions(ui);
+  assert.equal(ui.get('.guide').hasAttribute('hidden'), true);
+  await ui.input('#source-scenario', true, 'change');
+  assert.equal(ui.get('.guide').hasAttribute('hidden'), false);
+});

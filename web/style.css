@@ -25,3 +25,4 @@ body{font-size:14px}.eyebrow{font-size:10px}.workspace-label{font-size:10px}.nav
 .simulation{display:flex;flex-direction:column;gap:6px;margin-top:8px}
 .simulation-note{font-size:9px;color:#8d9b85;margin:4px 0 0}
 .simulation-note.error{color:var(--danger)}
+.guide[hidden]{display:none}

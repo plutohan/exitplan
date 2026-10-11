@@ -57,7 +57,7 @@ Every adapter fails closed with a reason code; the UI never substitutes cached o
 
 ## Disclosure
 
-All code was written on 2026-10-11 and 2026-10-12, inside the hackathon window, by a solo builder with AI coding assistance. The synthetic engine and UI (first commit) were built on the morning of 2026-10-11; the real-data adapters, Vercel deployment and English copy followed the same day. No code predates the window. Public addresses used in the demo belong to other people; they are read-only examples and are not ours.
+All code was written on 2026-10-11, with review fixes on 2026-10-12, inside the hackathon window, by a solo builder with AI coding assistance. The synthetic engine and UI (first commit) were built on the morning of 2026-10-11; the real-data adapters, Vercel deployment and English copy followed the same day. No code predates the window. Public addresses used in the demo belong to other people; they are read-only examples and are not ours.
 
 ## Documents
 

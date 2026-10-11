@@ -24,5 +24,10 @@
         }
       ]
     }
-  ]
+  ],
+  "functions": {
+    "api/intent.js": {
+      "maxDuration": 30
+    }
+  }
 }

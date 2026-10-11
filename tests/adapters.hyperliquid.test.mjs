@@ -80,3 +80,19 @@ test('HTTP failure, bad JSON and timeout are distinct errors', async () => {
   await assert.rejects(importHyperliquid(ADDR, { fetchImpl: () => new Promise(() => {}), timeoutMs: 5 }), e => e.code === 'TIMEOUT');
   await assert.rejects(importHyperliquid(ADDR, { fetchImpl: async () => { throw new TypeError('offline'); } }), e => e.code === 'NETWORK_ERROR');
 });
+
+test('states when the exchange reported less withdrawable than the model reserve allows', async () => {
+  const state = await fixture('hl-sol-short');
+  state.withdrawable = '0.0';
+  const result = await importHyperliquid(ADDR, { fetchImpl: fetchFor(state) });
+  assert.ok(result.state.collateral - result.state.shortSol * result.state.markPrice * 0.1 > 0, 'fixture must leave model headroom');
+  assert.ok(result.assumptions.some(line => /reported \$0\.00 withdrawable/.test(line)), result.assumptions.join(' | '));
+  assert.equal(result.reported.withdrawable, 0);
+});
+
+test('equity above the reserve but below locked margin still rejects with LEVERAGE_TOO_HIGH', async () => {
+  const state = await fixture('hl-sol-short');
+  const others = state.assetPositions.filter(a => a.position.coin !== 'SOL').reduce((sum, a) => sum + Number(a.position.marginUsed), 0);
+  state.marginSummary.accountValue = String(others + 100); // positive collateral of $100, below the 10% reserve of a 700 SOL short
+  await assert.rejects(importHyperliquid(ADDR, { fetchImpl: fetchFor(state) }), e => e.code === 'LEVERAGE_TOO_HIGH');
+});

@@ -53,7 +53,14 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
   if (collateral < 0 || required > collateralCents) {
     throw new AdapterError('LEVERAGE_TOO_HIGH', `Equity after other positions' margin ($${collateral.toFixed(2)}) is below the 10% reserve for the SOL short; the planner does not model this leverage`);
   }
-  const freeWithdrawable = Math.max(0, Math.min(round2(withdrawable), (collateralCents - required) / 100));
+  const modelHeadroom = (collateralCents - required) / 100;
+  const freeWithdrawable = Math.max(0, Math.min(round2(withdrawable), modelHeadroom));
+  const assumptions = [
+    'Standard account assumed; the public API does not verify the account mode',
+    'Reserve is 10% of short notional, a model assumption, not the exchange maintenance margin',
+    'Margin used by other open positions is treated as locked and deducted from equity',
+  ];
+  if (round2(withdrawable) < modelHeadroom) assumptions.push(`The exchange reported $${round2(withdrawable).toFixed(2)} withdrawable at load; collateral released by reducing the short is a model estimate, not an exchange quote`);
   return {
     evidence: 'imported',
     venue: 'hyperliquid',
@@ -62,10 +69,6 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
     source: 'Hyperliquid public info API',
     state: { accountMode: 'standard', marginMode: 'cross', asset: 'SOL', shortSol, markPrice, collateral, conservativeMarginRate: HL_RESERVE_RATE, freeWithdrawable },
     reported: { accountValue, withdrawable, marginUsed: decimal(summary.totalMarginUsed ?? 0, 'totalMarginUsed'), ...solReport, otherPositions },
-    assumptions: [
-      'Standard account assumed; the public API does not verify the account mode',
-      'Reserve is 10% of short notional, a model assumption, not the exchange maintenance margin',
-      'Margin used by other open positions is treated as locked and deducted from equity',
-    ],
+    assumptions,
   };
 }
