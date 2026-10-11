@@ -956,33 +956,38 @@ $('#load-example').addEventListener('click', () => {
   $('#hl-address').value = EXAMPLE.hyperliquid;
   loadPositions();
 });
+function detectWallet() {
+  const w = window;
+  if (w.phantom?.solana?.connect) return { name: 'Phantom', solana: w.phantom.solana, evm: w.phantom.ethereum };
+  if (w.okxwallet?.solana?.connect) return { name: 'OKX Wallet', solana: w.okxwallet.solana, evm: w.okxwallet };
+  if (w.solana?.connect) return { name: w.solana.isPhantom ? 'Phantom' : 'Solana wallet', solana: w.solana, evm: w.ethereum };
+  return null;
+}
 $('#connect-phantom').addEventListener('click', async () => {
-  const ph = window.phantom;
-  if (!ph?.solana?.connect) {
-    toast('Phantom not detected. Paste the addresses instead');
+  const wallet = detectWallet();
+  if (!wallet) {
+    toast('No wallet detected (Phantom, OKX or another injected wallet). Paste the addresses instead');
     return;
   }
   setSource('import');
   try {
-    const session = await ph.solana.connect();
-    const solAddress = session?.publicKey?.toString?.() ?? '';
+    const session = await wallet.solana.connect();
+    const solAddress = session?.publicKey?.toString?.() ?? wallet.solana.publicKey?.toString?.() ?? '';
     let hl = '';
     try {
-      const accounts = await ph.ethereum?.request?.({ method: 'eth_requestAccounts' });
+      const accounts = await wallet.evm?.request?.({ method: 'eth_requestAccounts' });
       hl = Array.isArray(accounts) && accounts[0] ? String(accounts[0]) : '';
     } catch {}
     if (solAddress) $('#solana-address').value = solAddress;
     if (hl) $('#hl-address').value = hl;
     if (!solAddress || !hl) {
-      setImportStatus(
-        'Phantom connected read-only, but the Phantom Perps 0x address was not shared. Enable the Ethereum account in Phantom or paste the 0x address',
-        true,
-      );
+      setImportStatus(`${wallet.name} connected read-only, but the EVM (Hyperliquid) address was not shared. Enable the Ethereum account in the wallet or paste the 0x address`, true);
       return;
     }
+    toast(`${wallet.name} connected read-only`);
     loadPositions();
   } catch (error) {
-    setImportStatus(`Phantom connection cancelled: ${error?.message || 'unknown'}`, true);
+    setImportStatus(`Wallet connection cancelled: ${error?.message || 'unknown'}`, true);
   }
 });
 function planLink() {

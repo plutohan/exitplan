@@ -773,18 +773,28 @@ test('imported positions show the exchange liquidation price and an estimate aft
   assert.match(ui.get('#position-cards').textContent, /SOL only; other positions held constant/);
 });
 
-test('Phantom connect fills both addresses read-only, and says so when Phantom is missing', async t => {
+test('wallet connect works with Phantom or OKX and says so when no wallet is present', async t => {
   const ui = await mount(t, { externalResponse: external() });
+  assert.match(ui.get('#connect-phantom').textContent, /Connect wallet/);
   await ui.click('#connect-phantom');
-  assert.match(ui.get('#toast').textContent, /Phantom not detected/);
-  ui.window.phantom = {
-    solana: { connect: async ({ onlyIfTrusted } = {}) => ({ publicKey: { toString: () => WALLET } }) },
-    ethereum: { request: async ({ method }) => (method === 'eth_requestAccounts' ? [HL_ADDRESS] : null) },
+  assert.match(ui.get('#toast').textContent, /No wallet detected/);
+  ui.window.okxwallet = {
+    solana: { connect: async () => ({ publicKey: { toString: () => WALLET } }) },
+    request: async ({ method }) => (method === 'eth_requestAccounts' ? [HL_ADDRESS] : null),
   };
   await ui.click('#connect-phantom');
   await flush(); await flush();
   assert.equal(ui.get('#solana-address').value, WALLET);
   assert.equal(ui.get('#hl-address').value, HL_ADDRESS);
+  assert.match(ui.get('#import-status').textContent, /Loaded/);
+  delete ui.window.okxwallet;
+  await ui.click('.reset-all');
+  ui.window.phantom = {
+    solana: { connect: async () => ({ publicKey: { toString: () => WALLET } }) },
+    ethereum: { request: async ({ method }) => (method === 'eth_requestAccounts' ? [HL_ADDRESS] : null) },
+  };
+  await ui.click('#connect-phantom');
+  await flush(); await flush();
   assert.match(ui.get('#import-status').textContent, /Loaded/);
   assertNoExecutionCalls(ui);
 });
