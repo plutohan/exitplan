@@ -52,3 +52,15 @@ test('route names say which venue the cash comes from, rejection reasons read as
   assert.equal(money(500, true), '$500.00');
   assert.equal(money(1234.5), '$1,234.50');
 });
+
+test('engine errors are printed in the report instead of a plausible empty route list', async () => {
+  const { fetchImpl } = await publicStub();
+  const [solana, hyperliquid] = await Promise.all([importSolana(WALLET, { fetchImpl }), importHyperliquid(HL, { fetchImpl })]);
+  const portfolio = buildImportedPortfolio(solana, hyperliquid);
+  const constraints = { ...defaultConstraints(), target: -1 };
+  const result = planExit(portfolio, constraints);
+  assert.ok(result.errors.length > 0);
+  const text = buildReport({ imported: { solana, hyperliquid }, portfolio, result, constraints, link: 'x' });
+  assert.match(text, /## Errors/);
+  assert.match(text, new RegExp(result.errors[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+});

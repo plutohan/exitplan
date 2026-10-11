@@ -33,6 +33,9 @@ export async function run(argv, { fetchImpl = globalThis.fetch, write = (text) =
   if (args.help) { write(USAGE); return 0; }
   if (!isSolanaAddress(args.sol)) { write(`Invalid or missing Solana wallet address.\n${USAGE}`); return 2; }
   if (!/^0x[0-9a-fA-F]{40}$/.test(args.hl)) { write(`Invalid or missing Hyperliquid address (0x + 40 hex).\n${USAGE}`); return 2; }
+  for (const [flag, value, min] of [['--target', args.target, 0], ['--max-debt', args.maxDebt, 0], ['--min-buffer', args.minBuffer, 0], ['--deadline', args.deadline, 0.01]]) {
+    if (!Number.isFinite(value) || value < min) { write(`${flag} must be a number of at least ${min}.\n${USAGE}`); return 2; }
+  }
   let solana, hyperliquid;
   try {
     [solana, hyperliquid] = await Promise.all([importSolana(args.sol, { fetchImpl }), importHyperliquid(args.hl, { fetchImpl })]);
@@ -44,6 +47,7 @@ export async function run(argv, { fetchImpl = globalThis.fetch, write = (text) =
   const portfolio = buildImportedPortfolio(solana, hyperliquid);
   const constraints = { ...defaultConstraints(), target: args.target, maxNewDebt: args.maxDebt, minHlBuffer: args.minBuffer, deadlineHours: args.deadline, preserveHedge: !args.noHedge, preserveSolQuantity: args.keepSol };
   const result = planExit(portfolio, constraints);
+  if (args.select && !result.plans.some((plan) => plan.id === args.select)) { write(`Unknown route id "${args.select}". Known: ${result.plans.map((plan) => plan.id).join(', ')}\n`); return 2; }
   const selectedId = args.select ?? result.best?.id ?? null;
   const params = new URLSearchParams({ sol: args.sol, hl: args.hl });
   for (const key of ['target', 'maxNewDebt', 'minHlBuffer', 'deadlineHours', 'preserveHedge', 'preserveSolQuantity']) params.set(key, String(constraints[key]));

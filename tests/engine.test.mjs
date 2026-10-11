@@ -478,3 +478,9 @@ test('routes that collapse to the same allocation are listed once, whichever fam
   const bigger = planExit(createDemoPortfolio(), { ...defaultConstraints(), target: 2000, preserveHedge: false });
   assert.ok(bigger.plans.some(p => p.id === 'close-short' && p.shortReduced > 0), 'a real reduction stays its own route');
 });
+
+test('carry keeps parts-per-million precision instead of rounding the rate to whole basis points', () => {
+  const p = createDemoPortfolio(); p.hyperliquid.fundingApr = 0.00005; // 0.005% a year
+  const paired = planExit(p, defaultConstraints()).plans.find(x => x.id === 'paired-unwind');
+  assert.equal(paired.carryBreakdown.funding, 0.1); // 2,006.02 × 0.00005 = $0.10, not $0.20 from a 1 bps rounding
+});

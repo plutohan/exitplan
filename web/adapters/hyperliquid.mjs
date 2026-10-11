@@ -15,7 +15,8 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
     requestJson(HL_INFO_URL, { ...options, body: { type: 'allMids' } }),
     requestJson(HL_INFO_URL, { ...options, body: { type: 'userAbstraction', user: address } }),
     requestJson(HL_INFO_URL, { ...options, body: { type: 'vaultDetails', vaultAddress: address } }),
-    requestJson(HL_INFO_URL, { ...options, body: { type: 'spotClearinghouseState', user: address } }),
+    // Informational for a standard account, required for a unified one (checked below); a failed read must not blank a standard import.
+    requestJson(HL_INFO_URL, { ...options, body: { type: 'spotClearinghouseState', user: address } }).catch(() => undefined),
     // Carry input only: a failed funding read degrades to 'unknown' instead of failing the import.
     requestJson(HL_INFO_URL, { ...options, body: { type: 'fundingHistory', coin: 'SOL', startTime: now() - 7 * 86_400_000 } }).catch(() => undefined),
     // Fee input only: the account's own taker rate; a failed read falls back to the 5 bps model fee.
@@ -44,6 +45,7 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
   const usdcEntry = spotBalances.find((b) => b && b.coin === 'USDC');
   const spotUsdc = { total: usdcEntry ? decimal(usdcEntry.total, 'spot USDC total') : 0, hold: usdcEntry ? decimal(usdcEntry.hold ?? 0, 'spot USDC hold') : 0 };
   if (spotUsdc.total < 0 || spotUsdc.hold < 0) throw new AdapterError('INVALID_RESPONSE', 'Spot USDC total and hold must be non-negative');
+  if (spotUsdc.hold > spotUsdc.total + 1e-6) throw new AdapterError('INVALID_RESPONSE', `Spot USDC hold ($${spotUsdc.hold.toFixed(2)}) exceeds the total ($${spotUsdc.total.toFixed(2)}); the balances do not fit the model`);
   if (unified && !usdcEntry && (perpsAccountValue !== 0 || (Array.isArray(state.assetPositions) && state.assetPositions.length > 0))) throw new AdapterError('INVALID_RESPONSE', 'Unified account: the spot USDC entry is missing although the account has positions or equity');
   const accountValue = unified ? spotUsdc.total : perpsAccountValue;
   const withdrawable = unified ? round2(Math.max(0, spotUsdc.total - spotUsdc.hold)) : perpsWithdrawable;
@@ -110,15 +112,20 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
   }
   const modelHeadroom = (collateralCents - required) / 100;
   const freeWithdrawable = Math.max(0, Math.min(round2(withdrawable), modelHeadroom));
-  let funding = null;
+  let funding = null, fundingNote = null;
   if (Array.isArray(fundingHistory) && fundingHistory.length) {
     const rates = fundingHistory.map((entry) => Number(entry && entry.fundingRate));
+    const times = fundingHistory.map((entry) => Number(entry && entry.time));
     if (rates.every((rate) => Number.isFinite(rate))) {
       const hourlyMean = rates.reduce((sum, rate) => sum + rate, 0) / rates.length;
-      funding = { samples: rates.length, hourlyMean: Math.round(hourlyMean * 1e10) / 1e10, apr: round6(hourlyMean * 24 * 365) };
+      const hours = times.every((t) => Number.isFinite(t) && t > 0) ? Math.max(1, Math.round((Math.max(...times) - Math.min(...times)) / 3_600_000) + 1) : rates.length;
+      const apr = round6(hourlyMean * 24 * 365);
+      if (Math.abs(apr) > 5) fundingNote = `SOL funding history out of range at load (${(apr * 100).toFixed(0)}% a year over ${hours} hours); carry on the short is unknown`;
+      else funding = { samples: rates.length, hours, hourlyMean: Math.round(hourlyMean * 1e10) / 1e10, apr };
     }
   }
   const fundingApr = funding ? funding.apr : null;
+  const fundingSpan = funding ? (funding.hours >= 160 ? '7-day average' : `${funding.hours}-hour average`) : null;
   const universe = meta && Array.isArray(meta.universe) ? meta.universe : null;
   const assetIndex = universe ? universe.findIndex((u) => u && u.name === 'SOL') : -1;
   const szDecimals = assetIndex >= 0 && Number.isInteger(Number(universe[assetIndex].szDecimals)) && Number(universe[assetIndex].szDecimals) >= 0 && Number(universe[assetIndex].szDecimals) <= 6 ? Number(universe[assetIndex].szDecimals) : null;
@@ -127,7 +134,10 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
   let fees = null;
   if (userFees && typeof userFees === 'object') {
     const taker = Number(userFees.userCrossRate), maker = Number(userFees.userAddRate);
-    if (Number.isFinite(taker) && taker >= 0 && taker < 0.01) fees = { takerRate: taker, makerRate: Number.isFinite(maker) ? maker : null, closeBps: Math.ceil(taker * 10_000 - 1e-9) };
+    // Basis points straight from the decimal string, rounded up exactly (no floating-point epsilon games).
+    const bpsCeil = (text) => { const m = /^(\d+)(?:\.(\d+))?$/.exec(String(text).trim()); if (!m) return null; const fraction = m[2] ?? ''; const n = BigInt(m[1] + fraction); const decimals = fraction.length; if (decimals <= 4) return Number(n * 10n ** BigInt(4 - decimals)); const d = 10n ** BigInt(decimals - 4); return Number((n + d - 1n) / d); };
+    const closeBps = bpsCeil(userFees.userCrossRate) ?? (Number.isFinite(taker) ? Math.ceil(taker * 10_000) : null);
+    if (Number.isFinite(taker) && taker >= 0 && taker < 0.01 && closeBps != null) fees = { takerRate: taker, makerRate: Number.isFinite(maker) ? maker : null, closeBps };
   }
   const assumptions = [
     unified
@@ -138,7 +148,8 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
   ];
   assumptions.push(fees ? `Short-reduction fee uses your Hyperliquid taker rate (${(fees.takerRate * 10_000).toFixed(3)} bps before referral discount, rounded up to ${fees.closeBps} bps)` : 'Hyperliquid fee schedule unavailable at load; the model uses 5 bps for the short reduction');
   assumptions.push(szDecimals == null ? 'Hyperliquid meta unavailable at load; SOL lot size assumed 0.01 SOL and the $10 minimum order applied' : `Short reductions are sized in ${lotSize} SOL lots (szDecimals ${szDecimals} from meta); reductions below Hyperliquid's $${minOrderUsd} minimum order are rejected`);
-  assumptions.push(funding ? `Carry uses the 7-day average SOL funding, ${(funding.apr * 100).toFixed(2)}% per year over ${funding.samples} hourly samples (positive means longs pay shorts); it is an estimate at today's rates` : 'SOL funding history unavailable at load; carry on the short is unknown');
+  assumptions.push(funding ? `Carry uses the ${fundingSpan} SOL funding, ${(funding.apr * 100).toFixed(2)}% per year over ${funding.samples} hourly samples (positive means longs pay shorts); it is an estimate at today's rates` : fundingNote ?? 'SOL funding history unavailable at load; carry on the short is unknown');
+  if (!unified && spot === undefined) assumptions.push('Spot balances unavailable at load; they are informational for a standard account (other stables and USOL on HyperCore spot not listed)');
   if (crossCheck && !crossCheck.ok) assumptions.push(`Cross-check: spot USDC total minus cross maintenance margin ($${crossCheck.implied.toFixed(2)}) does not match the exchange's available-after-maintenance figure ($${crossCheck.available.toFixed(2)}); positions on other perp DEXs (HIP-3) or a snapshot skew are likely, and those positions are not modelled`);
   if (otherStables.length) assumptions.push(`Other stable collateral on HyperCore spot (${otherStables.map((s) => `${s.coin} ${s.total.toLocaleString('en-US', { maximumFractionDigits: 2 })}`).join(', ')}) is not modelled`);
   if (spotSol > 0) assumptions.push(`HyperCore spot holds ${spotSol} USOL; it is not counted as Solana spot SOL`);

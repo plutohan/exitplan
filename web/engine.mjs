@@ -136,8 +136,8 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
   const fixedLendingFee = cents(f.lendingWithdraw), fixedTransferFee = cents(f.hlTransfer), fixedBorrowFee = cents(f.borrowFixed);
   const notional = (q, p = price) => mulFloor(q, p, UNITS);
   // Carry given up per year, truncated toward zero: funding on the short reduced (positive funding = shorts earn) plus supply yield on the deposit withdrawn.
-  const fundingBps = h.fundingApr == null ? null : Math.round(h.fundingApr * 10_000);
-  const supplyBps = s.lending.supplyApy == null ? null : Math.round(s.lending.supplyApy * 10_000);
+  const fundingPpm = h.fundingApr == null ? null : Math.round(h.fundingApr * 1_000_000);
+  const supplyPpm = s.lending.supplyApy == null ? null : Math.round(s.lending.supplyApy * 1_000_000);
   const requiredMargin = short => feeFor(mulCeil(short, mark, UNITS), marginBps);
   const originalRequired = requiredMargin(initialShort);
   const initialBuffer = initialCollateral - originalRequired;
@@ -199,8 +199,8 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
     if (a.closed > 0 && minOrderCents > 0 && notional(a.closed, mark) < minOrderCents) rejections.push(`Short reduction of $${dollars(notional(a.closed, mark)).toFixed(2)} is below Hyperliquid's $${dollars(minOrderCents).toFixed(2)} minimum order.`);
     if (a.borrowed > borrowCapacity(a.sold)) rejections.push('Borrow amount exceeds the comparison-only collateral capacity.');
     const totalFees = proceedsFees + collateralFees;
-    const fundingCarry = a.closed ? (fundingBps == null ? null : mulFloor(notional(a.closed, mark), fundingBps, 10_000)) : 0;
-    const lendingCarry = a.lending ? (supplyBps == null ? null : mulFloor(a.lending, supplyBps, 10_000)) : 0;
+    const fundingCarry = a.closed ? (fundingPpm == null ? null : mulFloor(notional(a.closed, mark), fundingPpm, 1_000_000)) : 0;
+    const lendingCarry = a.lending ? (supplyPpm == null ? null : mulFloor(a.lending, supplyPpm, 1_000_000)) : 0;
     const carryPerYear = fundingCarry == null || lendingCarry == null ? null : fundingCarry + lendingCarry;
     const feeBreakdown = {
       lendingWithdrawal: dollars(a.lending ? fixedLendingFee : 0),

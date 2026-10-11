@@ -33,7 +33,7 @@ const EXTERNAL_HOSTS = ['api.hyperliquid.xyz', 'solana-rpc.publicnode.com', 'api
 const external = ({ hl = hlShort, kamino = kaminoFixture, jupiter = jupiterFixture, lamports = 3_219_600_000, fail = null, mode = 'disabled', spot = { balances: [] } } = {}) => async call => {
   const target = new URL(call.url);
   if (fail && target.host === fail) return new Response('down', { status: 404 }); // 404 is not retried, so the harness's faked timers never wait on the 300 ms retry pause
-  if (target.host === 'api.hyperliquid.xyz') { const type = JSON.parse(call.body).type; return json(type === 'allMids' ? { SOL: '109.695' } : type === 'userAbstraction' ? mode : type === 'vaultDetails' ? null : type === 'spotClearinghouseState' ? spot : type === 'fundingHistory' ? hlFunding : type === 'userFees' ? hlFees : type === 'l2Book' ? hlBook : type === 'meta' ? hlMeta : hl); }
+  if (target.host === 'api.hyperliquid.xyz') { const type = JSON.parse(call.body).type; return json(type === 'allMids' ? { SOL: '109.695' } : type === 'userAbstraction' ? mode : type === 'vaultDetails' ? null : type === 'spotClearinghouseState' ? spot : type === 'fundingHistory' ? hlFunding : type === 'userFees' ? hlFees : type === 'l2Book' ? { ...hlBook, time: Date.now() } : type === 'meta' ? hlMeta : hl); } // a fresh book: a stale one withholds the order on purpose
   if (target.host === 'solana-rpc.publicnode.com') return json({ jsonrpc: '2.0', id: 1, result: { context: { slot: 1 }, value: lamports } });
   if (target.host === 'api.kamino.finance' && target.pathname.endsWith('/reserves/metrics')) return json([{ reserve: 'D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59', totalSupply: '120702201.4', totalBorrow: '112626977.24', supplyApy: '0.0468228385' }]);
   if (target.host === 'api.kamino.finance') return json(kamino);
@@ -1122,4 +1122,29 @@ test('the hero button loads the public example without touching the source radio
   assert.match(ui.get('#market-reference-value').textContent, /reference only/);
   assert.doesNotMatch(ui.get('#market-reference-value').textContent, /synthetic scenario/);
   if (ui.window.history?.replaceState) assert.match(String(ui.window.location.hash), /sol=/);
+});
+
+test('while a simulation is pending the rehearsal cannot advance, so a late answer cannot land on another step', async t => {
+  let release;
+  const pending = new Promise(resolve => { release = resolve; });
+  const base = external();
+  const ui = await mount(t, { externalResponse: async call => {
+    if (call.host === 'api.hyperliquid.xyz' && JSON.parse(call.body).type === 'l2Book') { await pending; return json({ ...hlBook, time: Date.now() }); }
+    return base(call);
+  } });
+  await importPositions(ui);
+  await ui.input('#target', 500);
+  await ui.click('[data-plan="paired-unwind"]');
+  await ui.click('#rehearse');
+  await ui.click('#rehearsal-next'); // wallet step reviewed → short reduction is current
+  await ui.click('#simulate-step');
+  await flush();
+  assert.match(ui.get('#simulation-result').textContent, /Reading the Hyperliquid book/);
+  assert.equal(ui.get('#rehearsal-next').disabled, true, 'Next is locked while a simulation is pending');
+  assert.equal(ui.get('#simulate-step').disabled, true);
+  release();
+  for (let i = 0; i < 20 && /Reading/.test(ui.get('#simulation-result').textContent); i++) await flush();
+  assert.match(ui.get('#simulation-result').textContent, /Book preview/);
+  assert.equal(ui.get('#rehearsal-next').disabled, false);
+  assert.match(ui.get('.rehearsal-step.current').textContent, /Reduce SOL short/);
 });

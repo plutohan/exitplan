@@ -139,12 +139,12 @@ test('the preview builds the unsigned reduce-only IOC order the user would sign,
   const old = await previewReduceShort({ quantity: 20, assetIndex: 5, szDecimals: 2, now: () => book.time + 20_000, fetchImpl });
   assert.equal(old.stale, true);
   assert.equal(old.costVsPlan, null, 'no mark, no cost comparison');
-  const snapped = await previewReduceShort({ quantity: 20.123, assetIndex: 5, szDecimals: 2, fetchImpl });
+  const snapped = await previewReduceShort({ quantity: 20.123, assetIndex: 5, szDecimals: 2, now: () => book.time + 1000, fetchImpl });
   assert.equal(snapped.order.s, '20.12');
   assert.equal(snapped.sizeSnapped, true);
-  const noIndex = await previewReduceShort({ quantity: 20, fetchImpl });
+  const noIndex = await previewReduceShort({ quantity: 20, now: () => book.time + 1000, fetchImpl });
   assert.equal(noIndex.order, null);
-  const cheap = await previewReduceShort({ quantity: 20, assetIndex: 5, szDecimals: 2, fetchImpl: async () => Response.json({ ...book, levels: [[{ px: '0.012345', sz: '1000' }], [{ px: '0.012346', sz: '1000' }]] }) });
+  const cheap = await previewReduceShort({ quantity: 1000, assetIndex: 5, szDecimals: 2, now: () => book.time + 1000, fetchImpl: async () => Response.json({ ...book, levels: [[{ px: '0.012345', sz: '1000' }], [{ px: '0.012346', sz: '1000' }]] }) });
   assert.equal(cheap.order.p, '0.0125', 'four decimals at most for a perp with szDecimals 2, rounded up');
 });
 
@@ -167,4 +167,19 @@ test('the sell simulation hands back the unsigned transaction and its inspector 
   const result = await simulateSellSol({ address: WALLET, solAmount: 1.5, fetchImpl, now: () => 1_791_731_274_640 });
   assert.equal(result.transactionBase64, tx);
   assert.equal(result.inspectorUrl, inspectorUrl(tx));
+});
+
+test('the inner order uses canonical number strings, is withheld on a stale book, and respects the $10 minimum at its limit price', async () => {
+  const book = JSON.parse(await readFile(new URL('./fixtures/hl-l2book.json', import.meta.url), 'utf8'));
+  const flat = { ...book, levels: [[{ px: '99.99', sz: '10' }], [{ px: '100', sz: '10' }]] };
+  const fetchImpl = async () => Response.json(flat);
+  const trailing = await previewReduceShort({ quantity: 1.5, assetIndex: 5, szDecimals: 2, now: () => book.time + 1000, fetchImpl });
+  assert.equal(trailing.order.p, '100.5', 'no trailing zeros in the price string');
+  assert.equal(trailing.order.s, '1.5');
+  const stale = await previewReduceShort({ quantity: 1.5, assetIndex: 5, szDecimals: 2, now: () => book.time + 60_000, fetchImpl });
+  assert.equal(stale.order, null);
+  assert.match(stale.orderNote, /stale/i);
+  const dust = await previewReduceShort({ quantity: 0.05, assetIndex: 5, szDecimals: 2, now: () => book.time + 1000, fetchImpl });
+  assert.equal(dust.order, null);
+  assert.match(dust.orderNote, /\$10 minimum/);
 });

@@ -58,15 +58,18 @@ export async function previewReduceShort({ quantity, assetIndex = null, szDecima
   const bookTime = Number(book.time) || null;
   const bookAgeSeconds = bookTime ? Math.max(0, Math.round((now() - bookTime) / 1000)) : null;
   // The order the user would sign, in the exchange's own wire shape: buy, reduce-only, immediate-or-cancel. Built, never sent.
-  const order = Number.isInteger(assetIndex) && assetIndex >= 0 ? { a: assetIndex, b: true, p: limitPrice.toFixed(decimals), s: String(size), r: true, t: { limit: { tif: 'Ioc' } } } : null;
+  const canonical = (value) => String(Number(value)); // Hyperliquid signing rules: no trailing zeros, no exponent at these magnitudes
+  const stale = bookAgeSeconds == null || bookAgeSeconds > 10;
+  const orderNote = !Number.isInteger(assetIndex) || assetIndex < 0 ? 'asset index unavailable, order not built' : stale ? `book is ${bookAgeSeconds == null ? 'undated' : `stale (${bookAgeSeconds}s old)`}; run the preview again before signing` : size * limitPrice < 10 ? `below the $10 minimum order at the limit price ($${(size * limitPrice).toFixed(2)})` : null;
+  const order = orderNote ? null : { a: assetIndex, b: true, p: canonical(limitPrice.toFixed(decimals)), s: canonical(size), r: true, t: { limit: { tif: 'Ioc' } } };
   return {
     ok: true, quantity, size, sizeSnapped: size !== quantity, filled, partial: remaining > 0, averagePrice, bestAsk, bestBid,
     mid: Math.round(((bestAsk + bestBid) / 2) * 10_000) / 10_000,
     slippageBps: averagePrice == null ? null : Math.round(((averagePrice - bestAsk) / bestAsk) * 10_000 * 10) / 10,
     slippageVsMarkBps: averagePrice == null || markPrice == null ? null : Math.round(((averagePrice - markPrice) / markPrice) * 10_000 * 10) / 10,
     costVsPlan: averagePrice == null || markPrice == null ? null : Math.round((averagePrice - markPrice) * filled * 100) / 100,
-    levelsUsed, visibleDepth: round6(asks.reduce((sum, l) => sum + l.sz, 0)), bookTime, bookAgeSeconds, stale: bookAgeSeconds != null && bookAgeSeconds > 10,
-    limitPrice, slippageCapBps, order,
+    levelsUsed, visibleDepth: round6(asks.reduce((sum, l) => sum + l.sz, 0)), bookTime, bookAgeSeconds, stale,
+    limitPrice, slippageCapBps, order, orderNote,
   };
 }
 

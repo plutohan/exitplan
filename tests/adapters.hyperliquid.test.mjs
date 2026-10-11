@@ -13,7 +13,7 @@ const fetchFor = (state, options = {}) => async (url, init) => {
   if (body.type === 'allMids') return Response.json(options.mids ?? mids);
   if (body.type === 'userAbstraction') { assert.equal(body.user, ADDR); return Response.json(options.mode ?? 'disabled'); }
   if (body.type === 'vaultDetails') { assert.equal(body.vaultAddress, ADDR); return Response.json(options.vault ?? null); }
-  if (body.type === 'spotClearinghouseState') { assert.equal(body.user, ADDR); return Response.json(options.spot ?? { balances: [] }); }
+  if (body.type === 'spotClearinghouseState') { assert.equal(body.user, ADDR); if (options.spot === 'error') return new Response('boom', { status: 503 }); return Response.json(options.spot ?? { balances: [] }); }
   if (body.type === 'clearinghouseState') { assert.equal(body.user, ADDR); return Response.json(state); }
   if (body.type === 'meta') { if (options.meta === 'error') return new Response('boom', { status: 500 }); return Response.json(options.meta ?? await fixture('hl-meta')); }
   if (body.type === 'userFees') { assert.equal(body.user, ADDR); if (options.fees === 'error') return new Response('boom', { status: 500 }); return Response.json(options.fees ?? await fixture('hl-user-fees')); }
@@ -251,7 +251,8 @@ test('imports the 7-day average SOL funding as an annual rate, and degrades to u
   const mean = history.reduce((sum, h) => sum + Number(h.fundingRate), 0) / history.length;
   const result = await importHyperliquid(ADDR, { fetchImpl: fetchFor(state) });
   assert.equal(result.state.fundingApr, Math.round(mean * 24 * 365 * 1e6) / 1e6);
-  assert.deepEqual(result.reported.funding, { samples: history.length, hourlyMean: Math.round(mean * 1e10) / 1e10, apr: result.state.fundingApr });
+  const hours = Math.round((Math.max(...history.map(h => h.time)) - Math.min(...history.map(h => h.time))) / 3_600_000) + 1;
+  assert.deepEqual(result.reported.funding, { samples: history.length, hours, hourlyMean: Math.round(mean * 1e10) / 1e10, apr: result.state.fundingApr });
   assert.ok(result.assumptions.some(line => /7-day average/.test(line) && /funding/.test(line)), result.assumptions.join(' | '));
   const down = await importHyperliquid(ADDR, { fetchImpl: fetchFor(state, { funding: 'error' }) });
   assert.equal(down.state.fundingApr, null);
@@ -293,4 +294,43 @@ test('reads the SOL lot size and asset index from meta, falling back to the know
   assert.ok(down.assumptions.some(line => /lot size assumed/i.test(line)), down.assumptions.join(' | '));
   const odd = await importHyperliquid(ADDR, { fetchImpl: fetchFor(state, { meta: { universe: [{ name: 'SOL', szDecimals: 3, maxLeverage: 20 }] } }) });
   assert.equal(odd.state.lotSize, 0.001);
+});
+
+test('a failed spot read only degrades a standard import, but still fails a unified one', async () => {
+  const standard = await importHyperliquid(ADDR, { fetchImpl: fetchFor(await fixture('hl-sol-short'), { spot: 'error' }) });
+  assert.equal(standard.state.shortSol > 0, true);
+  assert.deepEqual(standard.reported.spotUsdc, { total: 0, hold: 0 });
+  assert.ok(standard.assumptions.some(line => /spot balances unavailable/i.test(line)), standard.assumptions.join(' | '));
+  await assert.rejects(importHyperliquid(ADDR, { fetchImpl: fetchFor(await fixture('hl-unified-perps'), { mode: 'unifiedAccount', spot: 'error' }) }), e => e.code === 'INVALID_RESPONSE' && /spot/i.test(e.message));
+});
+
+test('a funding anomaly or a short history degrades carry to unknown or is labelled by its real span, never a fatal portfolio', async () => {
+  const state = await fixture('hl-sol-short');
+  const hour = 3_600_000, start = 1_791_000_000_000;
+  const series = (n, rate) => Array.from({ length: n }, (_, i) => ({ coin: 'SOL', fundingRate: String(rate), premium: '0', time: start + i * hour }));
+  const wild = await importHyperliquid(ADDR, { fetchImpl: fetchFor(state, { funding: series(168, 0.001) }) }); // 876% a year
+  assert.equal(wild.state.fundingApr, null);
+  assert.ok(wild.assumptions.some(line => /funding/i.test(line) && /out of range/i.test(line)), wild.assumptions.join(' | '));
+  const short = await importHyperliquid(ADDR, { fetchImpl: fetchFor(state, { funding: series(10, 0.00001) }) });
+  assert.equal(short.state.fundingApr, Math.round(0.00001 * 24 * 365 * 1e6) / 1e6);
+  assert.equal(short.reported.funding.hours, 10);
+  assert.ok(short.assumptions.some(line => /10-hour average/.test(line)), short.assumptions.join(' | '));
+  assert.ok(!short.assumptions.some(line => /7-day average/.test(line)));
+  const full = await importHyperliquid(ADDR, { fetchImpl: fetchFor(state) });
+  assert.ok(full.assumptions.some(line => /7-day average/.test(line)));
+});
+
+test('the taker rate is turned into basis points exactly from the decimal string, rounded up', async () => {
+  const state = await fixture('hl-sol-short');
+  for (const [rate, bps] of [['0.0004', 4], ['0.00040001', 5], ['0.0003825', 4], ['0.00045', 5], ['0.0001', 1], ['0', 0]]) {
+    const result = await importHyperliquid(ADDR, { fetchImpl: fetchFor(state, { fees: { userCrossRate: rate, userAddRate: '0.0001' } }) });
+    assert.equal(result.reported.fees.closeBps, bps, `${rate} → ${bps} bps`);
+  }
+});
+
+test('a unified hold larger than the total is rejected instead of clamped', async () => {
+  const spot = structuredClone(await fixture('hl-unified-spot'));
+  const usdc = spot.balances.find(b => b.coin === 'USDC');
+  usdc.hold = String(Number(usdc.total) + 1);
+  await assert.rejects(importHyperliquid(ADDR, { fetchImpl: fetchFor(await fixture('hl-unified-perps'), { mode: 'unifiedAccount', spot }) }), e => e.code === 'INVALID_RESPONSE' && /hold/i.test(e.message));
 });

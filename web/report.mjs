@@ -86,7 +86,7 @@ export function preflightChecks({ imported, portfolio, constraints }) {
   const push = (status, label, detail) => items.push({ status, label, detail });
   if (hl.reported.accountMode === 'disabled') push('ok', 'Account mode', 'verified on HyperCore: standard (abstraction disabled)');
   else if (hl.reported.accountMode === 'unifiedAccount' && hl.reported.crossCheck && !hl.reported.crossCheck.ok) push('warn', 'Account mode', `unified account verified, but the cross-check failed: spot USDC total minus maintenance ${money(hl.reported.crossCheck.implied, true)} vs exchange available ${money(hl.reported.crossCheck.available, true)}; positions on other perp DEXs (HIP-3) are not modelled`);
-  else if (hl.reported.accountMode === 'unifiedAccount') push('ok', 'Account mode', `verified on HyperCore: unified account (spot USDC ${money(hl.reported.spotUsdc.total, true)} is the equity, ${money(hl.reported.spotUsdc.hold, true)} held as margin)`);
+  else if (hl.reported.accountMode === 'unifiedAccount') push('ok', 'Account mode', `verified on HyperCore: unified account (spot USDC ${money(hl.reported.spotUsdc.total, true)} is the equity, ${money(hl.reported.spotUsdc.hold, true)} held for margin or open orders)`);
   else push('warn', 'Account mode', 'reported as default on HyperCore; treated as standard, not proven');
   const exposure = portfolio.solana.sol - portfolio.hyperliquid.shortSol;
   if (Math.abs(exposure) < 0.000001) push('ok', 'Net exposure', '0 SOL: spot and short balanced');
@@ -99,7 +99,7 @@ export function preflightChecks({ imported, portfolio, constraints }) {
   const buffer = initialHlBuffer(portfolio);
   const reserveLabel = `${(portfolio.hyperliquid.conservativeMarginRate * 100).toFixed(portfolio.hyperliquid.conservativeMarginRate * 100 % 1 ? 2 : 0)}% reserve`;
   if (buffer < constraints.minHlBuffer) push('warn', 'HL margin buffer', `model buffer ${money(buffer, true)} (${reserveLabel}) is under your ${money(constraints.minHlBuffer)} floor: HL withdrawals only after reducing the short; non-HL routes are evaluated separately`);
-  else push('ok', 'HL margin buffer', `model buffer ${money(buffer, true)} (${reserveLabel}) above your ${money(constraints.minHlBuffer)} floor; exchange reported ${money(hl.reported.withdrawable, true)} withdrawable (Δ ${money(Math.abs(buffer - hl.reported.withdrawable), true)})`);
+  else push('ok', 'HL margin buffer', `model buffer ${money(buffer, true)} (${reserveLabel}) above your ${money(constraints.minHlBuffer)} floor; ${hl.reported.accountMode === 'unifiedAccount' ? "derived from the exchange's total and hold:" : 'exchange reported'} ${money(hl.reported.withdrawable, true)} withdrawable (Δ ${money(Math.abs(buffer - hl.reported.withdrawable), true)})`);
   const liquidity = so.reported.reserveLiquidity, deposit = portfolio.solana.lending.usdc;
   if (deposit <= 0) push('info', 'Kamino liquidity', 'no Kamino deposit to withdraw');
   else if (liquidity >= deposit) push('ok', 'Kamino liquidity', `${money(liquidity, true)} pool cash in the USDC reserve (before withdrawal caps) vs your ${money(deposit, true)} deposited`);
@@ -129,6 +129,7 @@ export function buildReport({ imported, portfolio, result, constraints, selected
     `Solana: ${num(s.sol)} SOL · Kamino deposit ${money(s.lending.usdc, true)} · wallet USDC ${money(s.wallet.usdc, true)} · SOL quote ${money(s.solPrice, true)}`,
     `Hyperliquid: ${h.accountMode} account · short ${num(h.shortSol)} SOL at mark ${money(h.markPrice, true)} · liquidation ${hl.reported.liquidationPrice ? money(hl.reported.liquidationPrice, true) : 'n/a'} · model buffer ${money(initialHlBuffer(portfolio), true)} (${(h.conservativeMarginRate * 100).toFixed(h.conservativeMarginRate * 100 % 1 ? 2 : 0)}% reserve) · exchange withdrawable ${money(hl.reported.withdrawable, true)}`,
     `Goal: ${money(constraints.target)} net USDC · keep net exposure: ${yesNo(constraints.preserveHedge)} · keep SOL quantity: ${yesNo(constraints.preserveSolQuantity)} · new-debt cap ${money(constraints.maxNewDebt)} · min HL buffer ${money(constraints.minHlBuffer)} · deadline ${constraints.deadlineHours} h`,
+    ...(result.errors && result.errors.length ? ['', '## Errors', ...result.errors.map((line) => `- ${line}`)] : []),
     '',
     '## Checks',
     ...preflightChecks({ imported, portfolio, constraints }).map((i) => `- ${i.label}: ${i.status} · ${i.detail}`),

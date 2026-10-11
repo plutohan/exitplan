@@ -52,3 +52,14 @@ test('bad input exits with usage, and an adapter failure exits non-zero with the
   assert.match(out4.text(), /Could not load positions/);
   assert.deepEqual(parseArgs(['--sol', WALLET, '--hl', HL]).target, 2000);
 });
+
+test('constraint ranges are validated before any network call, an unknown --select is refused, and engine errors reach the report', async () => {
+  const noNetwork = async () => { throw new Error('must not fetch'); };
+  const bad = capture();
+  assert.equal(await run(['--sol', WALLET, '--hl', HL, '--target', '-5'], { fetchImpl: noNetwork, write: bad.write }), 2);
+  assert.match(bad.text(), /--target must be/);
+  const { fetchImpl } = await publicStub();
+  const unknown = capture();
+  assert.equal(await run(['--sol', WALLET, '--hl', HL, '--select', 'nope'], { fetchImpl, write: unknown.write }), 2);
+  assert.match(unknown.text(), /unknown route id/i);
+});
