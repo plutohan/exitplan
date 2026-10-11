@@ -32,7 +32,7 @@ const HL_ADDRESS = '0x3de9a354243a94e10060a198c7179b8e5393b9a1';
 const EXTERNAL_HOSTS = ['api.hyperliquid.xyz', 'solana-rpc.publicnode.com', 'api.kamino.finance', 'lite-api.jup.ag'];
 const external = ({ hl = hlShort, kamino = kaminoFixture, jupiter = jupiterFixture, lamports = 3_219_600_000, fail = null, mode = 'disabled', spot = { balances: [] } } = {}) => async call => {
   const target = new URL(call.url);
-  if (fail && target.host === fail) return new Response('down', { status: 500 });
+  if (fail && target.host === fail) return new Response('down', { status: 404 }); // 404 is not retried, so the harness's faked timers never wait on the 300 ms retry pause
   if (target.host === 'api.hyperliquid.xyz') { const type = JSON.parse(call.body).type; return json(type === 'allMids' ? { SOL: '109.695' } : type === 'userAbstraction' ? mode : type === 'vaultDetails' ? null : type === 'spotClearinghouseState' ? spot : type === 'fundingHistory' ? hlFunding : type === 'userFees' ? hlFees : type === 'l2Book' ? hlBook : type === 'meta' ? hlMeta : hl); }
   if (target.host === 'solana-rpc.publicnode.com') return json({ jsonrpc: '2.0', id: 1, result: { context: { slot: 1 }, value: lamports } });
   if (target.host === 'api.kamino.finance' && target.pathname.endsWith('/reserves/metrics')) return json([{ reserve: 'D6q6wuQSrifJKZYpR1M8R4YawnLDtDsMmWM1NbBmgJ59', totalSupply: '120702201.4', totalBorrow: '112626977.24', supplyApy: '0.0468228385' }]);

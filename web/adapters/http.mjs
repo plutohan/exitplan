@@ -23,7 +23,7 @@ export function record(value, name) {
   return value;
 }
 
-export async function requestJson(url, { method = 'GET', body, fetchImpl = globalThis.fetch, timeoutMs = 8000 } = {}) {
+export async function requestJson(url, { method = 'GET', body, fetchImpl = globalThis.fetch, timeoutMs = 8000, retryDelayMs = 300 } = {}) {
   const host = new URL(url).host;
   const controller = new AbortController();
   let timer;
@@ -35,7 +35,7 @@ export async function requestJson(url, { method = 'GET', body, fetchImpl = globa
       reject(new AdapterError('TIMEOUT', `${host} did not answer within ${timeoutMs} ms`));
     }, timeoutMs);
   });
-  const work = (async () => {
+  const attempt = async () => {
     let response;
     try {
       response = await fetchImpl(url, {
@@ -51,7 +51,26 @@ export async function requestJson(url, { method = 'GET', body, fetchImpl = globa
       throw new AdapterError('NETWORK_ERROR', `${host} could not be reached`, { cause: error });
     }
     if (!response || typeof response.ok !== 'boolean' || typeof response.text !== 'function') throw new AdapterError('INVALID_RESPONSE', `${host} returned an invalid HTTP response`);
-    if (!response.ok) throw new AdapterError('HTTP_ERROR', `${host} returned HTTP ${response.status}`);
+    if (!response.ok) {
+      const error = new AdapterError('HTTP_ERROR', `${host} returned HTTP ${response.status}`);
+      error.status = response.status;
+      throw error;
+    }
+    return response;
+  };
+  const work = (async () => {
+    let response;
+    try {
+      response = await attempt();
+    } catch (error) {
+      // Every call here is an idempotent read or an unsigned build, so one retry after a short pause is safe for a
+      // rate limit, a gateway error or a dropped socket. Anything else, and a timeout, surfaces as-is.
+      const transient = error.code === 'NETWORK_ERROR' || (error.code === 'HTTP_ERROR' && (error.status === 429 || error.status >= 500));
+      if (!transient || retryDelayMs == null || controller.signal.aborted) throw error;
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      if (controller.signal.aborted) throw error;
+      response = await attempt();
+    }
     const text = await response.text();
     if (text.length > MAX_BYTES) throw new AdapterError('INVALID_RESPONSE', `${host} response is too large`);
     try { return JSON.parse(text); } catch { throw new AdapterError('INVALID_RESPONSE', `${host} returned invalid JSON`); }
