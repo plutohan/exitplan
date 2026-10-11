@@ -27,6 +27,7 @@ export function createDemoPortfolio() {
     solana: {
       sol: 100, solPrice: 100,
       lending: { usdc: 3000, debt: 0, withdrawCapacity: 3000 },
+      wallet: { usdc: 0 },
       borrow: { enabled: true, capacity: 3000, maxLtv: 0.3 }
     },
     hyperliquid: {
@@ -77,6 +78,7 @@ function validate(portfolio, supplied) {
   for (const key of ['usdc', 'debt', 'withdrawCapacity']) number(s?.lending?.[key], `solana.lending.${key}`);
   if (s?.lending?.withdrawCapacity > s?.lending?.usdc) errors.push('Lending withdrawal capacity cannot exceed the supplied USDC balance.');
   if (s?.lending?.debt !== 0) errors.push('Existing lending debt is unsupported by this fixture adapter.');
+  number(s?.wallet?.usdc, 'solana.wallet.usdc');
   if (typeof s?.borrow?.enabled !== 'boolean') errors.push('solana.borrow.enabled must be boolean.');
   number(s?.borrow?.capacity, 'solana.borrow.capacity');
   number(s?.borrow?.maxLtv, 'solana.borrow.maxLtv', { max: 1, scale: 10_000 });
@@ -118,6 +120,9 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
   const price = cents(s.solPrice), mark = cents(h.markPrice);
   const initialCollateral = cents(h.collateral), initialLending = cents(s.lending.usdc);
   const lendingCapacity = cents(s.lending.withdrawCapacity);
+  const walletCents = cents(s.wallet.usdc);
+  const walletUse = Math.min(walletCents, target); // free USDC is always used first, at zero fee
+  const need = target - walletUse;
   const initialFree = cents(h.freeWithdrawable);
   const marginBps = Math.round(h.conservativeMarginRate * 10_000);
   const ltvBps = Math.round(s.borrow.maxLtv * 10_000);
@@ -133,7 +138,7 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
   ));
   const borrowCapacity = sold => s.borrow.enabled ? Math.max(0, Math.min(cents(s.borrow.capacity), mulFloor(notional(initialSol - sold), ltvBps, 10_000))) : 0;
   const saleNet = q => notional(q) - feeFor(notional(q), f.solSaleBps);
-  const cash = a => a.lending - (a.lending ? fixedLendingFee : 0)
+  const cash = a => a.wallet + a.lending - (a.lending ? fixedLendingFee : 0)
     + a.hl - (a.hl ? fixedTransferFee : 0) + saleNet(a.sold)
     + a.borrowed - (a.borrowed ? fixedBorrowFee : 0);
   const minQuantity = (limit, meets) => {
@@ -143,10 +148,10 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
     while (lo < hi) { const mid = Math.floor((lo + hi) / 2); if (meets(mid)) hi = mid; else lo = mid + 1; }
     return lo;
   };
-  const allocation = (updates = {}) => ({ lending: 0, hl: 0, sold: 0, closed: 0, borrowed: 0, ...updates });
+  const allocation = (updates = {}) => ({ wallet: walletUse, lending: 0, hl: 0, sold: 0, closed: 0, borrowed: 0, ...updates });
   const signatures = new Set();
   const add = (id, label, a, family, deduplicate = false) => {
-    const signature = [a.lending, a.hl, a.sold, a.closed, a.borrowed].join(':');
+    const signature = [a.wallet, a.lending, a.hl, a.sold, a.closed, a.borrowed].join(':');
     if (deduplicate && signatures.has(signature)) return;
     signatures.add(signature);
     const proceedsFees = (a.lending ? fixedLendingFee : 0) + (a.hl ? fixedTransferFee : 0)
@@ -156,6 +161,7 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
     const marginAfter = requiredMargin(initialShort - a.closed);
     const net = cash(a), rejections = [], steps = [];
     const step = (venue, action, amount, unit) => steps.push({ venue, action, amount, unit });
+    if (a.wallet) step('Solana wallet', 'Use USDC already in the wallet', dollars(a.wallet), 'USDC');
     if (a.lending) step('Solana lending (fixture)', 'Withdraw lending USDC', dollars(a.lending), 'USDC');
     if (a.sold) step('Solana (fixture)', 'Sell SOL for USDC', quantity(a.sold), 'SOL');
     if (a.closed) step('Hyperliquid (fixture)', 'Reduce SOL short by the paired quantity', quantity(a.closed), 'SOL');
@@ -170,6 +176,7 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
     // The floor binds only when a route lowers the buffer; an account that already sits under it may still raise cash elsewhere.
     if (hlAfter - marginAfter < minimumBuffer && hlAfter - marginAfter < initialBuffer) rejections.push(`Remaining HL scenario buffer of $${dollars(hlAfter - marginAfter).toFixed(2)} is below $${c.minHlBuffer.toFixed(2)}.`);
     if (estimatedHours > c.deadlineHours) rejections.push(`Fixture duration of ${estimatedHours} hours exceeds the ${c.deadlineHours}-hour deadline; this is not a delivery guarantee.`);
+    if (a.wallet > walletCents) rejections.push('Wallet USDC exceeds the balance.');
     if (a.lending > lendingCapacity) rejections.push('Lending withdrawal exceeds supplied capacity.');
     if (a.sold > initialSol || a.closed > initialShort) rejections.push('Trade exceeds the available position quantity.');
     if (a.hl > hlCapacity(a.closed)) rejections.push('HL withdrawal exceeds the scenario removable collateral limit.');
@@ -185,7 +192,8 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
     result.plans.push({
       id, label, family, steps, netCash: dollars(net), fees: dollars(totalFees),
       feesFromProceeds: dollars(proceedsFees), feesFromCollateral: dollars(collateralFees), feeBreakdown,
-      grossProceeds: dollars(a.lending + a.hl + notional(a.sold) + a.borrowed),
+      grossProceeds: dollars(a.wallet + a.lending + a.hl + notional(a.sold) + a.borrowed),
+      walletUsed: dollars(a.wallet),
       newDebt: dollars(a.borrowed), existingDebt: s.lending.debt, debtAfter: s.lending.debt + dollars(a.borrowed),
       solAfter: quantity(initialSol - a.sold), shortAfter: quantity(initialShort - a.closed),
       solPledgedAfter: a.borrowed ? quantity(minQuantity(initialSol - a.sold, q => mulFloor(notional(q), ltvBps, 10_000) >= a.borrowed)) : 0,
@@ -204,19 +212,23 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
   const desired = (amount, fixed, capacity) => amount > 0 ? Math.min(capacity, amount + fixed) : 0;
   const pairedLimit = Math.min(initialSol, initialShort);
   if (target === 0) add('no-action', 'No withdrawal needed', allocation(), 'hold');
-  add('withdraw-lending', 'Withdraw lending USDC', allocation({ lending: desired(target, fixedLendingFee, lendingCapacity) }), 'lending');
-  add('withdraw-hl', 'Withdraw free HL collateral', allocation({ hl: desired(target, fixedTransferFee, hlCapacity(0)) }), 'collateral');
-  const pairedQuantity = minQuantity(pairedLimit, q => saleNet(q) >= target);
+  if (target > 0 && need === 0) {
+    // Free wallet USDC covers the whole target: one route, nothing else to enumerate.
+    add('wallet-usdc', 'Use USDC already in the wallet', allocation(), 'wallet');
+  } else if (target > 0) {
+  add('withdraw-lending', 'Withdraw lending USDC', allocation({ lending: desired(need, fixedLendingFee, lendingCapacity) }), 'lending');
+  add('withdraw-hl', 'Withdraw free HL collateral', allocation({ hl: desired(need, fixedTransferFee, hlCapacity(0)) }), 'collateral');
+  const pairedQuantity = minQuantity(pairedLimit, q => saleNet(q) >= need);
   add('paired-unwind', 'Sell SOL + reduce matching short', allocation({ sold: pairedQuantity, closed: pairedQuantity }), 'paired');
-  const saleQuantity = minQuantity(initialSol, q => saleNet(q) >= target);
+  const saleQuantity = minQuantity(initialSol, q => saleNet(q) >= need);
   add('sell-sol', 'Sell SOL without reducing short', allocation({ sold: saleQuantity }), 'sale');
-  add('borrow-sol', 'Borrow against SOL (comparison only)', allocation({ borrowed: desired(target, fixedBorrowFee, borrowCapacity(0)) }), 'borrow');
+  add('borrow-sol', 'Borrow against SOL (comparison only)', allocation({ borrowed: desired(need, fixedBorrowFee, borrowCapacity(0)) }), 'borrow');
 
   // Enumerate bounded hybrid grids, then size the final source to the target.
   // Every action is rechecked against all constraints; the grid makes no optimality claim.
   const fractions = [0, 0.25, 0.5, 0.75, 1];
   for (const [li, fraction] of fractions.entries()) {
-    const l = Math.min(Math.floor(lendingCapacity * fraction), desired(target, fixedLendingFee, lendingCapacity));
+    const l = Math.min(Math.floor(lendingCapacity * fraction), desired(need, fixedLendingFee, lendingCapacity));
     const base = allocation({ lending: l });
     const gap = Math.max(0, target - cash(base));
     const hOnly = desired(gap, fixedTransferFee, hlCapacity(0));
@@ -247,11 +259,12 @@ export function planExit(portfolio, suppliedConstraints = defaultConstraints()) 
     const releasedQuantity = minQuantity(pairedLimit, q => cash(withReleased(q)) >= target);
     add(`hybrid-release-${li}`, 'Paired unwind + released collateral', withReleased(releasedQuantity), 'hybrid', true);
   }
+  }
 
   // Maximum retaining both position quantities and creating no debt, independent of target.
   // Respect the same minimum buffer and fixture deadline; maximize over source subsets.
   for (const useLending of [false, true]) for (const useHl of [false, true]) {
-    const a = allocation({ lending: useLending ? lendingCapacity : 0, hl: useHl ? hlCapacity(0) : 0 });
+    const a = allocation({ wallet: walletCents, lending: useLending ? lendingCapacity : 0, hl: useHl ? hlCapacity(0) : 0 });
     const duration = (a.lending ? t.lendingWithdrawHours : 0) + (a.hl ? t.hlTransferHours : 0);
     if (duration <= c.deadlineHours) result.maximumWithoutSelling = Math.max(result.maximumWithoutSelling, dollars(cash(a)));
   }

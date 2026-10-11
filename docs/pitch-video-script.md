@@ -1,28 +1,30 @@
 # Pitch video script (2:30 target, 3:00 hard limit)
 
-Record with Loom or screen + webcam. Speak plainly. Show the live site at 1:10.
+Record with Loom or screen + webcam. Hook first, bio second. Show the live site from 1:00. Say every number as "as of October 11".
 
-**0:00 – 0:15 · Who**
-"Hi, I'm Pluto, a Solana tooling contributor based in the UAE. I build and audit Solana programs and client tooling. ExitPlan is a solo build from this hackathon."
+**0:00 – 0:25 · Hook**
+"You're long SOL in Phantom and short SOL on Hyperliquid, a hedge that pays you funding. Tonight you need $3,000 on Solana. Sell SOL and you're net short. Pull margin and your liquidation price drops. Borrow and you're in debt. Which legs do you touch? I'm Pluto, I contribute to Solana developer tooling, and ExitPlan answers that in one screen."
 
-**0:15 – 0:50 · Problem**
-"If you hedge SOL — spot on Solana, deposits in Kamino, a short on Hyperliquid — you have a problem every time you need cash: *which legs do I unwind?* Selling spot breaks the hedge. Pulling margin can liquidate the short. Borrowing adds debt. Every dashboard shows balances. None of them answer the question: how much can I take out without breaking the rules I set for myself?"
+**0:25 – 0:55 · Problem and why now**
+"Phantom put Hyperliquid perps inside a Solana wallet, so this position is now mainstream: SOL and USDC, often in Kamino, on Solana; a Hyperliquid short on the other side. The state lives in three apps, so people unwind by feel, in the wrong order. Hyperliquid's SOL perp carries about 5.7 million SOL of open interest, and Circle's CCTP now sends USDC from HyperCore straight to a Solana token account. The hedge went mainstream. The exit tooling didn't."
 
-**0:50 – 1:10 · Insight**
-"ExitPlan treats cash as a goal and your limits as hard constraints: no new debt, keep the hedge, keep my SOL, keep a margin buffer, done within a day. It enumerates the routes across both venues, shows the ones that fit, and explains exactly why the others don't. Then it rehearses the chosen route before you touch anything."
+**0:55 – 1:10 · What it does**
+"ExitPlan takes a cash goal and the rules you refuse to break: no new debt, keep net exposure, keep my SOL, keep a margin floor. It reads both chains by address, verifies the Hyperliquid account mode on HyperCore, evaluates dozens of routes, shows the ones that fit, explains the ones that don't, and simulates the Solana leg on-chain before you sign."
 
-**1:10 – 2:00 · Demo clip** (from the demo video, muted or narrated)
-- Paste a Solana wallet and a Hyperliquid address → real positions load, labelled IMPORTED.
-- Target $5,000 with keep-SOL on → no route; open a rejected route: "$2,001 short of the target".
-- Relax keep-SOL, keep the hedge → a paired route appears: sell 2.7 SOL, reduce the short by 2.7 SOL, net exposure unchanged.
-- Rehearsal: "Simulate on Solana" → real `simulateTransaction` on the unsigned Jupiter swap: success, 91k compute units, quoted USDC.
-- AI panel: "I need $3,000, no new debt" → proposal shown, applied only after confirming.
+**1:10 – 2:00 · Demo clip** (from the demo video)
+- Two addresses, or Phantom connect → both chains load: "standard account ✓", net exposure, Kamino deposit, wallet USDC.
+- Keep-SOL with no debt: no route. "What would make it work" → trim both legs → a route appears, net exposure unchanged.
+- One rejection reason read aloud.
+- Rehearsal: "Simulate on Solana" → "Not a mock. Jupiter built the exact swap for this wallet and Solana's simulateTransaction ran it against current state. It succeeds, 91 thousand compute units, and returns within a fraction of a percent of the plan. Nothing was signed or sent."
+- One AI prompt, confirmed before anything applies.
 
 **2:00 – 2:25 · Market and business**
-"Who needs this: Phantom now ships Hyperliquid perps inside the wallet, so 'Solana spot plus a Hyperliquid short' is a mainstream position. Delta-neutral farmers, treasuries and anyone borrowing against SOL face the same unwind question. The planner is free; the business is in what comes after a plan: alerts when a plan stops being feasible, and execution through partners — Jupiter, Kamino, Hyperliquid, Circle's CCTP route back to Solana — with a routing fee."
+"Who: Phantom Perps and Hyperliquid traders holding SOL on Solana, and funding farmers running delta-neutral books. Free planner. Revenue from what comes after a plan: a Hyperliquid builder code on the short leg, a Jupiter integrator fee on the Solana leg, and a watch tier that alerts when a plan stops being feasible or liquidation gets close. Then automatic rebalancing of self-custodied delta-neutral positions, which is where the recurring volume is."
 
 **2:25 – 2:45 · What is real, what is next**
-"Today: real positions, real quotes, real Solana simulation, no execution. Next: wallet connect, simulating the Kamino and Hyperliquid legs, multi-asset hedges, and a watch mode. Everything is open source under MIT."
+"Read-only today, by design: real positions, a verified account mode, a real quote, a real Solana simulation. Next: one-click execution. Phantom signs the Solana leg, a Hyperliquid builder code routes the short, CCTP brings the USDC home. Everything is open source under MIT, and the route engine is a pure module anyone can import."
 
 **2:45 – 2:55 · Close**
-"ExitPlan: the cash you need, planned — without silently breaking your hedge. Link in the submission. Thanks."
+"ExitPlan: the cash you need, planned, without quietly breaking your hedge. Link in the submission. Thanks."
+
+Do not say "safe", "real-time" or "audited". Say "read at load time", "nothing is signed", and name the reviews that were done.

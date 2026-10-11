@@ -1,21 +1,30 @@
 # Product demo script (≤ 3:00)
 
-Screen recording of https://exitplan-rouge.vercel.app at 1440×900, dark theme. Re-check the demo addresses right before recording (`docs/demo-addresses.md`); positions change.
+Screen recording of https://exitplan-rouge.vercel.app at 1440×900. **Reload positions right before each take**: an imported snapshot older than five minutes blocks planning on purpose.
 
-**0:00 – 0:20 · Scenario walk**
-Open the site. Guide step 1: $2,000 target, keep the hedge → "Withdraw Solana deposit USDC" wins with $0.25 fees. Click *Next scenario*: $5,000 with keep-SOL → "No route satisfies the current conditions… up to $4,498.75". Click a rejected card → the reason. *Next scenario*: keep-SOL off → paired route appears; point at net SOL exposure 0 in the positions section.
+**Preferred data: your own small 1:1 hedge** (SOL in Phantom, an equal SOL short in Phantom Perps, some USDC in Kamino). Confirm beforehand with `curl` that `userAbstraction` returns `disabled` or `default` for your 0x address. Round numbers reproduce and the "keep SOL fails, trim both legs works" moment appears at ordinary targets.
 
-**0:20 – 0:55 · Import real positions**
-Portfolio source → *Import by address*. Paste the Solana wallet and the Hyperliquid address. *Load positions*. Status line: "Loaded · Solana 3.22 SOL · $9,607 deposited · HL short 700 SOL · hh:mm UTC". Plan cards now carry IMPORTED badges; the planning price is the Jupiter quote. Open *How it is calculated* → sources, addresses, the locked-margin assumption, other open positions listed.
+**Fallback data:** the public standard account and wallet in `docs/demo-addresses.md`. They are strangers to each other (3.2 SOL spot vs 91 SOL short), so pick the target with the app live before recording and avoid odd amounts.
 
-**0:55 – 1:35 · Compare and reject**
-Target $5,000, keep-SOL on → no route (deposits cover $9,607? then it is feasible: use target $12,000 instead to show the rejection). Open the rejected route, read "short of the target". Turn keep-SOL off: paired unwind sells SOL and reduces the short by the same amount; the hedge-ratio card stays balanced. Select it.
+**0:00 – 0:10 · Problem on screen**
+Caption over Phantom: "Long SOL · short SOL on Hyperliquid · need $X tonight."
 
-**1:35 – 2:20 · Rehearsal with a real simulation**
-*Step-by-step rehearsal*. Step 1 "Sell SOL spot · 2.69 SOL": press *Simulate on Solana (read-only)*. Result: "Simulation succeeded · 91,571 CU · quoted $301.51 USDC · 48 log lines · nothing was sent". Next step "Reduce SOL short": "Not simulated: a Hyperliquid order needs a signed exchange request". Finish: "Rehearsal complete".
+**0:10 – 0:35 · Load real positions**
+Portfolio source → *Import by address* (or the deep link `#sol=…&hl=…&target=…`). Load. Point at the status line: SOL, Kamino deposit, wallet USDC, HL short, net exposure, time. Open *How it is calculated*: "Account mode verified on HyperCore: standard", sources, the locked-margin assumption. Say: "No API keys, no custody. Both venues are public state."
 
-**2:20 – 2:50 · AI intent**
-Type "I need $3,000 and no new debt, keep the hedge". The proposal lists each changed condition. Press *Confirm and apply* → routes recompute. Show *Cancel* on a second proposal to make the point: nothing applies without confirmation.
+**0:35 – 1:10 · Compare, reject, relax**
+Set the target with keep-SOL on → no route. Click a rejected route and read one reason aloud. Click the suggestion under the banner ("Allow selling SOL, keep net exposure") → a paired route appears: sell N SOL, reduce the short by N, net exposure unchanged, margin buffer shown before and after.
+
+**1:10 – 1:55 · Rehearsal with a real simulation**
+*Step-by-step rehearsal*. On the sell step press *Simulate on Solana (read-only)*. Read the result: "Simulation succeeded · 9x,xxx CU · quoted $… USDC · nothing was sent". Next step: "Not simulated: a Hyperliquid order needs a signed exchange request". Finish.
+
+**1:55 – 2:30 · AI intent**
+Type "I need $2,000 by tomorrow, no new debt, keep my SOL". Show the proposal, press *Confirm and apply*. Type "as much as possible" and show the clarifying questions instead of a guess.
+
+**2:30 – 2:50 · Share**
+Press *Copy plan link*; paste it in a new tab; the same positions and target load.
 
 **2:50 – 3:00 · Close**
 Footer: "Nothing is signed, sent or traded". Cut.
+
+Avoid: strangers' accounts if you have your own, odd targets, the evidence wall, waiting on AI latency, and the word "safe".

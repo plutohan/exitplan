@@ -6,7 +6,7 @@ import { planExit, defaultConstraints, createDemoPortfolio } from '../web/engine
 
 const fixture = async name => JSON.parse(await readFile(new URL(`./fixtures/${name}.json`, import.meta.url), 'utf8'));
 const WALLET = 'DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK';
-const fetchFor = ({ lamports = 3_219_600_000, obligations, quote, rpcError = null }) => async (url, init = {}) => {
+const fetchFor = ({ lamports = 3_219_600_000, obligations, quote, rpcError = null, balances }) => async (url, init = {}) => {
   const target = new URL(url);
   if (target.origin === 'https://solana-rpc.publicnode.com') {
     const body = JSON.parse(init.body);
@@ -17,6 +17,10 @@ const fetchFor = ({ lamports = 3_219_600_000, obligations, quote, rpcError = nul
   if (target.origin === 'https://api.kamino.finance') {
     assert.equal(target.pathname, `/kamino-market/${KAMINO_MAIN_MARKET}/users/${WALLET}/obligations`);
     return Response.json(obligations);
+  }
+  if (target.origin === 'https://lite-api.jup.ag' && target.pathname.startsWith('/ultra/v1/balances/')) {
+    assert.equal(target.pathname, `/ultra/v1/balances/${WALLET}`);
+    return Response.json(balances === undefined ? { SOL: { amount: '3219600000', uiAmount: 3.2196 }, EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v: { amount: '336400000', uiAmount: 336.4 } } : balances);
   }
   if (target.origin === 'https://lite-api.jup.ag') {
     assert.equal(target.searchParams.get('amount'), '1000000000');
@@ -36,6 +40,7 @@ test('normalises balance, Kamino USDC deposits and a Jupiter quote into the engi
   assert.equal(result.state.lending.usdc, 9607.36);
   assert.equal(result.state.lending.debt, 0);
   assert.equal(result.state.lending.withdrawCapacity, 9607.36);
+  assert.equal(result.state.wallet.usdc, 336.4);
   assert.equal(result.state.borrow.maxLtv, 0.3);
   assert.equal(result.state.borrow.capacity, Math.round(3.2196 * 111.88 * 0.3 * 100) / 100);
   assert.equal(result.quote.solSaleBps, 50);
@@ -97,4 +102,12 @@ test('rejects obligations whose deposit list is missing or inconsistent with the
   const inconsistent = await loaded();
   for (const entry of inconsistent.obligations[0].state.deposits) { entry.depositReserve = '11111111111111111111111111111111'; entry.depositedAmount = '0'; }
   await assert.rejects(importSolana(WALLET, { fetchImpl: fetchFor(inconsistent) }), e => e instanceof AdapterError && e.code === 'INVALID_RESPONSE');
+});
+
+test('wallet USDC comes from Jupiter balances and is zero when absent or malformed', async () => {
+  const data = await loaded();
+  const none = await importSolana(WALLET, { fetchImpl: fetchFor({ ...data, balances: { SOL: { uiAmount: 1 } } }) });
+  assert.equal(none.state.wallet.usdc, 0);
+  await assert.rejects(importSolana(WALLET, { fetchImpl: fetchFor({ ...data, balances: [] }) }), e => e.code === 'INVALID_RESPONSE');
+  await assert.rejects(importSolana(WALLET, { fetchImpl: fetchFor({ ...data, balances: { EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v: { uiAmount: 'lots' } } }) }), e => e.code === 'INVALID_RESPONSE');
 });

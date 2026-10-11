@@ -313,3 +313,21 @@ test('routes that leave Hyperliquid untouched are not rejected by the HL floor w
   assert.ok(result.best);
   assert.ok(result.feasible.every(plan => plan.steps.every(step => !step.action.startsWith('Withdraw and transfer'))), 'nothing may be withdrawn from HL under the floor');
 });
+
+test('USDC already in the wallet is used first, at zero fee, and counts toward the no-sale maximum', () => {
+  const p = createDemoPortfolio();
+  p.solana = { ...p.solana, wallet: { usdc: 500 } };
+  const small = run({ target: 300 }, p);
+  assert.deepEqual(small.errors, []);
+  assert.equal(small.best.fees, 0);
+  assert.equal(small.best.netCash, 300);
+  assert.deepEqual(small.best.steps.map(step => step.action), ['Use USDC already in the wallet']);
+  assert.equal(small.best.walletUsed, 300);
+  const larger = run({ target: 2000 }, p);
+  assert.equal(larger.best.walletUsed, 500);
+  assert.equal(larger.best.netCash, 2000);
+  assert.equal(larger.best.fees, 0.25);
+  assert.equal(larger.maximumWithoutSelling, 4998.75);
+  const missing = createDemoPortfolio(); delete missing.solana.wallet;
+  assert.ok(run({}, missing).errors.some(error => /wallet/.test(error)));
+});

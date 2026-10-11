@@ -29,11 +29,12 @@ const external = ({ hl = hlShort, kamino = kaminoFixture, jupiter = jupiterFixtu
   if (target.host === 'api.hyperliquid.xyz') { const type = JSON.parse(call.body).type; return json(type === 'allMids' ? { SOL: '109.695' } : type === 'userAbstraction' ? mode : hl); }
   if (target.host === 'solana-rpc.publicnode.com') return json({ jsonrpc: '2.0', id: 1, result: { context: { slot: 1 }, value: lamports } });
   if (target.host === 'api.kamino.finance') return json(kamino);
+  if (target.host === 'lite-api.jup.ag' && target.pathname.startsWith('/ultra/v1/balances/')) return json({ SOL: { uiAmount: 3.2196 }, EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v: { uiAmount: 336.4 } });
   if (target.host === 'lite-api.jup.ag') return json(jupiter);
   assert.fail('unexpected external request ' + call.url);
 };
 
-async function mount(t, { aiConfigured = false, intentResponse, marketResponse, externalResponse } = {}) {
+async function mount(t, { aiConfigured = false, intentResponse, marketResponse, externalResponse, hash = '' } = {}) {
   const { window } = parseHTML(html);
   const { document } = window;
   const calls = [];
@@ -101,7 +102,7 @@ async function mount(t, { aiConfigured = false, intentResponse, marketResponse, 
   install('clearTimeout', id => timers.delete(id));
   install('requestAnimationFrame', callback => schedule(() => callback(clock), 16));
   install('cancelAnimationFrame', id => timers.delete(id));
-  install('location', { href: 'https://exitplan.example/', origin: 'https://exitplan.example' });
+  install('location', { href: 'https://exitplan.example/' + hash, origin: 'https://exitplan.example', hash });
   const storage = new Map();
   install('localStorage', { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, String(value)), removeItem: key => storage.delete(key), clear: () => storage.clear() });
   t.after(() => {
@@ -513,7 +514,8 @@ test('import by address loads both venues, labels plans IMPORTED and uses the qu
   assert.match(ui.get('.demo-label').textContent, /Imported/);
   assert.match(ui.get('.demo-label').textContent, /No real transactions/);
   assert.equal(ui.get('#load-positions').disabled, false);
-  assert.equal(ui.calls.filter(call => EXTERNAL_HOSTS.includes(call.host)).length, 6); // balance, Kamino, quote, clearinghouse, mids, account mode
+  assert.equal(ui.calls.filter(call => EXTERNAL_HOSTS.includes(call.host)).length, 7); // balance, Kamino, quote, wallet balances, clearinghouse, mids, account mode
+  assert.match(ui.get('#import-status').textContent, /\$336\.40 in wallet/);
   assertNoExecutionCalls(ui);
 });
 
@@ -573,11 +575,13 @@ test('imported rehearsal simulates the sell leg read-only and other steps are la
     return base(call);
   } });
   await importPositions(ui);
-  await ui.input('#target', 300);
+  await ui.input('#target', 500); // above the $336.40 already in the wallet, so a sale leg is needed
   await ui.click('[data-plan="paired-unwind"]');
   assert.equal(ui.get('.plan-card.selected').dataset.plan, 'paired-unwind');
   await ui.click('#rehearse');
   assert.match(ui.get('#dialog-body').textContent, /Read-only rehearsal/);
+  assert.match(ui.get('#dialog-body').textContent, /Nothing to simulate: USDC is already in the wallet/);
+  await ui.click('#rehearsal-next'); // past the wallet step
   assert.ok(ui.document.querySelector('#simulate-step'), 'sell step offers a read-only simulation');
   await ui.click('#simulate-step');
   for (let i = 0; i < 60 && /Simulating/.test(ui.get('#simulation-result').textContent); i++) await flush(); // three sequential network hops
@@ -718,4 +722,38 @@ test('imported copy never claims a 1:1 ratio, a synthetic walkthrough or an offs
   assert.doesNotMatch(body, /1:1/);
   assert.doesNotMatch(body, /walkthrough only/);
   assert.match(body, /Starting net exposure/);
+});
+
+test('a deep link pre-fills both addresses and the target and loads positions', async t => {
+  const ui = await mount(t, { externalResponse: external(), hash: `#sol=${WALLET}&hl=${HL_ADDRESS}&target=500` });
+  await flush(); await flush();
+  assert.equal(ui.get('#solana-address').value, WALLET);
+  assert.equal(ui.get('#hl-address').value, HL_ADDRESS);
+  assert.equal(ui.get('#target').value, '500');
+  assert.ok(ui.get('.evidence-badge').textContent.startsWith('IMPORTED'));
+  assert.equal(ui.get('#import-row').hasAttribute('hidden'), false);
+});
+
+test('the example button fills the public addresses and loads; copy link builds a deep link', async t => {
+  const ui = await mount(t, { externalResponse: external() });
+  await ui.click('#load-example');
+  assert.match(ui.get('#solana-address').value, /^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
+  assert.match(ui.get('#hl-address').value, /^0x[0-9a-fA-F]{40}$/);
+  assert.match(ui.get('#import-status').textContent, /Loaded/);
+  await ui.click('#share-link');
+  assert.match(ui.get('#toast').textContent, /#sol=/);
+  assert.match(ui.get('#toast').textContent, /&target=2000/);
+});
+
+test('when no route fits, the banner offers concrete relaxations that work', async t => {
+  const ui = await mount(t);
+  await ui.click('#guide-next'); // $5,000 with keep-SOL: no route
+  assert.match(ui.get('#result-banner').textContent, /No route/);
+  const suggestion = [...ui.document.querySelectorAll('[data-suggestion]')].find(el => /Allow selling SOL/.test(el.textContent));
+  assert.ok(suggestion, 'a keep-SOL relaxation must be offered');
+  assert.match(suggestion.textContent, /\$5,000/);
+  await ui.click(suggestion);
+  assert.equal(ui.get('#preserve-sol').checked, false);
+  assert.ok(ui.document.querySelector('.plan-card.selected'));
+  assert.equal(ui.get('#rehearse').disabled, false);
 });

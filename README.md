@@ -8,9 +8,9 @@ ExitPlan takes a **cash goal plus the limits you refuse to break** (new-debt cap
 
 ## What is real in this build
 
-- **Real positions by address.** Enter a Solana wallet and a Hyperliquid address. The browser reads them read-only from public APIs: SOL balance (publicnode RPC), Kamino main-market USDC deposits and borrows (Kamino API), the SOL short, equity, withdrawable and other positions on Hyperliquid (public info API), the HyperCore account mode (`userAbstraction`), and a live Jupiter quote for SOL → USDC.
+- **Real positions by address, or a deep link.** Enter a Solana wallet and a Hyperliquid address (or open a `#sol=…&hl=…&target=…` link, or press *Load public example*). The browser reads them read-only from public APIs: SOL balance (publicnode RPC), Kamino main-market USDC deposits and borrows (Kamino API), the SOL short, equity, withdrawable and other positions on Hyperliquid (public info API), the HyperCore account mode (`userAbstraction`), USDC already sitting in the wallet (Jupiter balances, used first at zero fee), and a live Jupiter quote for SOL → USDC.
 - **Real transaction simulation.** In the rehearsal, the Solana sell leg builds an unsigned Jupiter swap for the entered wallet and runs Solana `simulateTransaction` (signature verification off, fresh blockhash). You see success or the exact error, compute units and the quoted output. The transaction is never sent.
-- **Deterministic route engine** with integer-cent arithmetic, fail-closed validation and 159 automated tests, including a 650-plan conservation grid.
+- **Deterministic route engine** with integer-cent arithmetic, fail-closed validation and 164 automated tests, including a 650-plan conservation grid.
 - **AI intent with confirmation.** Describe the goal in your own words; a server function turns it into a constraint proposal (OpenAI structured output, validated against a schema), and nothing applies until you confirm.
 - **Public Hyperliquid market reference** (SOL perp mid) shown next to the planning price, never silently substituted.
 
@@ -29,7 +29,7 @@ ExitPlan takes a **cash goal plus the limits you refuse to break** (new-debt cap
 
 1. Open the live site. The default is a synthetic scenario (100 SOL, 3,000 USDC deposited, 100 SOL short). Walk the three guided scenarios.
 2. Switch **Portfolio source** to *Import by address*, paste a Solana wallet and a Hyperliquid address (public examples in `docs/demo-addresses.md`) and load.
-3. Set a target, compare routes, open a rejected route to read why, select a route and open the rehearsal. On the sell step, press *Simulate on Solana (read-only)*.
+3. Set a target, compare routes, open a rejected route to read why. If nothing fits, the banner offers concrete relaxations that do ("Allow selling SOL (keep net exposure) → $5,000 route"). Select a route and open the rehearsal. On the sell step, press *Simulate on Solana (read-only)*. *Copy plan link* gives a shareable deep link.
 
 ## Run locally
 
@@ -37,7 +37,7 @@ Requires Node.js 20+. The only dependency is LinkeDOM for DOM tests.
 
 ```sh
 npm ci --ignore-scripts
-npm test                       # 159 tests: engine, adapters, server, UI
+npm test                       # 164 tests: engine, adapters, server, UI
 npx vercel dev                 # serves web/ and the api/ functions
 ```
 
