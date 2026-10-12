@@ -30,7 +30,7 @@ test('a probe that throws skips that candidate instead of failing the pick', asy
   assert.equal(pick.hyperliquid, PUBLIC_EXAMPLES.hyperliquid[0]);
 });
 
-test('falls back to the first candidate of each chain when no probe passes, so the import shows the real reason', async () => {
-  const pick = await pickPublicExample({ probeSolana: async () => false, probeHyperliquid: async () => false });
-  assert.deepEqual(pick, { solana: PUBLIC_EXAMPLES.solana[0], hyperliquid: PUBLIC_EXAMPLES.hyperliquid[0] });
+test('returns null for a chain when no candidate passes, so the app can say that no public example fits instead of importing a stranger', async () => {
+  const pick = await pickPublicExample({ probeSolana: async () => false, probeHyperliquid: async a => a === PUBLIC_EXAMPLES.hyperliquid[0] });
+  assert.deepEqual(pick, { solana: null, hyperliquid: PUBLIC_EXAMPLES.hyperliquid[0] });
 });

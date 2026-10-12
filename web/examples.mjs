@@ -15,10 +15,10 @@ async function firstPassing(candidates, probe) {
       // unreachable or malformed: try the next candidate
     }
   }
-  return candidates[0]; // no hit: the import then shows the real reason instead of a silent blank
+  return null; // no hit: the caller says so instead of importing a stranger that no longer fits
 }
 
-/** Probes both lists in parallel and returns the first Solana wallet and the first Hyperliquid account that still fit the demo. */
+/** Probes both lists in parallel and returns the first Solana wallet and the first Hyperliquid account that still fit the demo; null per chain when none does. */
 export async function pickPublicExample({ probeSolana, probeHyperliquid, candidates = PUBLIC_EXAMPLES } = {}) {
   const [solana, hyperliquid] = await Promise.all([firstPassing(candidates.solana, probeSolana), firstPassing(candidates.hyperliquid, probeHyperliquid)]);
   return { solana, hyperliquid };

@@ -982,10 +982,17 @@ $$('input[name="source"]').forEach((radio) =>
   }),
 );
 $('#load-positions').addEventListener('click', loadPositions);
-/** Public examples change daily, so probe the list and fill the inputs with the first account that still holds a SOL short. */
+/** Public examples change daily, so probe the lists and fill the inputs with the first accounts that still fit. A newer click, reset or edit while the probe runs makes this one a no-op. */
+let exampleSequence = 0;
 async function useExample() {
+  const mine = ++exampleSequence, version = revision;
   setImportStatus('Finding public example accounts that still fit: a SOL short on Hyperliquid, SOL plus a Kamino USDC deposit on Solana…');
   const pick = await pickPublicExample({ probeSolana: hasKaminoUsdcAndSol, probeHyperliquid: hasSolShort });
+  if (mine !== exampleSequence || version !== revision) return null; // stale: something newer owns the inputs now
+  if (!pick.solana || !pick.hyperliquid) {
+    setImportStatus('No public example currently fits: the public accounts changed their positions. Paste your own addresses, or try again later.', true);
+    return null;
+  }
   $('#solana-address').value = pick.solana;
   $('#hl-address').value = pick.hyperliquid;
   return pick;
@@ -998,13 +1005,13 @@ $('#try-live').addEventListener('click', async () => {
   $('#target').value = '500';
   $('#target').dispatchEvent(new Event('input', { bubbles: true }));
   $('#target').dispatchEvent(new Event('change', { bubbles: true }));
-  await useExample();
+  if (!(await useExample())) return;
   await loadPositions();
   if (imported && result?.plans?.some((p) => p.id === 'paired-unwind' && p.feasible)) selectPlan('paired-unwind');
 });
 $('#load-example').addEventListener('click', async () => {
   setSource('import');
-  await useExample();
+  if (!(await useExample())) return;
   loadPositions();
 });
 function detectWallet() {

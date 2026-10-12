@@ -379,24 +379,41 @@ test('default-mode inference is conservative: a failed spot read proves nothing,
   assert.deepEqual([apart.reported.effectiveMode, apart.reported.modeEvidence], ['standard', 'inferred'], 'spot smaller than perps equity can only be the standard layout');
 });
 
-test('hasSolShort reports a cross-margin SOL short from a single clearinghouseState read', async () => {
+const probeFetch = (state, { mode = 'disabled', vault = null } = {}) => async (url, init) => {
+  const body = JSON.parse(init.body);
+  if (body.type === 'clearinghouseState') return Response.json(state);
+  if (body.type === 'userAbstraction') return Response.json(mode);
+  if (body.type === 'vaultDetails') return Response.json(vault);
+  assert.fail('the probe must only read state, mode and vault details: ' + body.type);
+};
+
+test('hasSolShort reports a cross-margin SOL short on a user account the importer accepts, with three parallel reads', async () => {
   const state = await fixture('hl-sol-short');
   const calls = [];
-  const fetchImpl = async (url, init) => { calls.push(JSON.parse(init.body).type); return Response.json(state); };
+  const fetchImpl = async (url, init) => { calls.push(JSON.parse(init.body).type); return probeFetch(state)(url, init); };
   assert.equal(await hasSolShort(ADDR, { fetchImpl }), true);
-  assert.deepEqual(calls, ['clearinghouseState']);
+  assert.deepEqual(calls.sort(), ['clearinghouseState', 'userAbstraction', 'vaultDetails']);
+  assert.equal(await hasSolShort(ADDR, { fetchImpl: probeFetch(state, { mode: 'unifiedAccount' }) }), true);
+  assert.equal(await hasSolShort(ADDR, { fetchImpl: probeFetch(state, { mode: 'default' }) }), true);
+});
+
+test('hasSolShort is false for a vault and for a portfolio-margin account even when they hold a SOL short', async () => {
+  const state = await fixture('hl-sol-short');
+  assert.equal(await hasSolShort(ADDR, { fetchImpl: probeFetch(state, { vault: { name: 'Some vault' } }) }), false);
+  assert.equal(await hasSolShort(ADDR, { fetchImpl: probeFetch(state, { mode: 'portfolioMargin' }) }), false);
+  assert.equal(await hasSolShort(ADDR, { fetchImpl: probeFetch(state, { mode: 'dexAbstraction' }) }), false);
 });
 
 test('hasSolShort is false for an account with no SOL position and for a SOL long', async () => {
   const none = await fixture('hl-no-position');
-  assert.equal(await hasSolShort(ADDR, { fetchImpl: async () => Response.json(none) }), false);
+  assert.equal(await hasSolShort(ADDR, { fetchImpl: probeFetch(none) }), false);
   const long = structuredClone(await fixture('hl-sol-short'));
   const sol = solPosition(long).position;
   sol.szi = String(Math.abs(Number(sol.szi)));
-  assert.equal(await hasSolShort(ADDR, { fetchImpl: async () => Response.json(long) }), false);
+  assert.equal(await hasSolShort(ADDR, { fetchImpl: probeFetch(long) }), false);
 });
 
 test('hasSolShort rejects an invalid address and propagates transport failures', async () => {
-  await assert.rejects(hasSolShort('nope', { fetchImpl: async () => Response.json({}) }), e => e instanceof AdapterError && e.code === 'INVALID_ADDRESS');
+  await assert.rejects(hasSolShort('nope', { fetchImpl: probeFetch({}) }), e => e instanceof AdapterError && e.code === 'INVALID_ADDRESS');
   await assert.rejects(hasSolShort(ADDR, { fetchImpl: async () => new Response('down', { status: 404 }) }), e => e instanceof AdapterError);
 });

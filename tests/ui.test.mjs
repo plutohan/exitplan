@@ -1315,13 +1315,13 @@ test('the hero button skips a public example that no longer holds a SOL short an
 
 test('anonymous usage events reach the analytics queue without any address or amount', async t => {
   assert.match(html, /<script[^>]+src="\/_vercel\/insights\/script\.js"/, 'the Vercel Web Analytics loader must be in the page');
-  const events = [];
   const ui = await mount(t, { externalResponse: external() });
-  ui.window.va = (kind, payload) => events.push({ kind, payload });
+  const start = (ui.window.vaq || []).length; // the bootstrap queue outlives one mounted page in this harness
   await ui.click('#try-live');
   for (let i = 0; i < 80 && !/Loaded|Could not/.test(ui.get('#import-status').textContent); i++) await flush();
   assert.match(ui.get('#import-status').textContent, /Loaded/);
-  const names = events.filter(e => e.kind === 'event').map(e => e.payload.name);
+  const events = (ui.window.vaq || []).slice(start).map(args => [...args]); // the page's own bootstrap queue, drained by Vercel's script once it loads
+  const names = events.filter(e => e[0] === 'event').map(e => e[1].name);
   assert.deepEqual(names, ['try-live', 'live-import']);
   const serialized = JSON.stringify(events);
   assert.doesNotMatch(serialized, /0x[0-9a-fA-F]{40}/);
@@ -1330,9 +1330,9 @@ test('anonymous usage events reach the analytics queue without any address or am
 });
 
 test('finishing a rehearsal on imported positions counts one anonymous rehearsal-complete event', async t => {
-  const events = [];
   const ui = await mount(t, { externalResponse: external() });
-  ui.window.va = (kind, payload) => { if (kind === 'event') events.push(payload.name); };
+  const start = (ui.window.vaq || []).length;
+  const events = { filter: fn => (ui.window.vaq || []).slice(start).map(args => args[1]?.name).filter(fn) };
   await importPositions(ui);
   await ui.click('#rehearse');
   for (let i = 0; i < 8 && !/Rehearsal complete/.test(ui.get('#dialog-title').textContent); i++) await ui.click('#rehearsal-next');
@@ -1340,4 +1340,50 @@ test('finishing a rehearsal on imported positions counts one anonymous rehearsal
   assert.deepEqual(events.filter(n => n === 'rehearsal-complete'), ['rehearsal-complete']);
   await ui.click('#rehearsal-next'); // closing the dialog does not count again
   assert.deepEqual(events.filter(n => n === 'rehearsal-complete'), ['rehearsal-complete']);
+});
+
+
+test('when no public example fits any more, the hero button says so and imports nothing', async t => {
+  const empty = structuredClone(hlShort);
+  empty.assetPositions = empty.assetPositions.filter(a => a.position.coin !== 'SOL');
+  const fallback = external();
+  const noShortAnywhere = async call => {
+    const target = new URL(call.url);
+    if (target.host === 'api.hyperliquid.xyz' && JSON.parse(call.body).type === 'clearinghouseState') return json(empty);
+    return fallback(call);
+  };
+  const ui = await mount(t, { externalResponse: noShortAnywhere });
+  await ui.click('#try-live');
+  for (let i = 0; i < 80 && !/fits|Loaded|Could not/.test(ui.get('#import-status').textContent); i++) await flush();
+  assert.match(ui.get('#import-status').textContent, /No public example currently fits/);
+  assert.doesNotMatch(ui.get('#import-status').textContent, /Loaded/);
+  assert.equal(ui.get('#hl-address').value, '');
+  assert.equal(ui.get('#source-import').checked, true);
+});
+
+
+test('a second hero click during a slow example probe wins, and the first click cannot overwrite it afterwards', async t => {
+  const { PUBLIC_EXAMPLES } = await import('../web/examples.mjs');
+  const gate = deferred();
+  let probes = 0, fullImports = 0;
+  const fallback = external();
+  const slowFirstProbe = async call => {
+    const target = new URL(call.url);
+    if (target.host === 'api.hyperliquid.xyz') {
+      const body = JSON.parse(call.body);
+      if (body.type === 'vaultDetails' && body.vaultAddress === PUBLIC_EXAMPLES.hyperliquid[0] && ++probes === 1) await gate.promise; // the first click's probe hangs
+      if (body.type === 'userFees') fullImports++; // read by the full import only
+    }
+    return fallback(call);
+  };
+  const ui = await mount(t, { externalResponse: slowFirstProbe });
+  await ui.click('#try-live');
+  await ui.click('#try-live');
+  for (let i = 0; i < 80 && !/Loaded|Could not/.test(ui.get('#import-status').textContent); i++) await flush();
+  assert.match(ui.get('#import-status').textContent, /Loaded/);
+  assert.equal(fullImports, 1);
+  gate.resolve();
+  for (let i = 0; i < 60; i++) await flush();
+  assert.equal(fullImports, 1, 'the stale click must not start a second import');
+  assert.match(ui.get('#import-status').textContent, /Loaded/);
 });
