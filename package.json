@@ -1,5 +1,5 @@
 {
-  "name": "exitplan-poc",
+  "name": "exitplan",
   "private": true,
   "type": "module",
   "bin": { "exitplan": "./bin/exitplan.mjs" },

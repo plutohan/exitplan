@@ -1,52 +1,63 @@
-# ExitPlan — the pre-flight check for unwinding a Solana–Hyperliquid hedge
+# ExitPlan — the pre-flight check before you unwind a Solana–Hyperliquid hedge
 
-**Live:** https://exitplan-rouge.vercel.app · **Hackathon:** Crypto World's Fair 2026 (Solana and Hyperliquid tracks) · **License:** MIT
+**Live:** https://exitplan-rouge.vercel.app · **Hackathon:** Colosseum Crypto World's Fair 2026, Solana and Hyperliquid tracks · **License:** MIT · **Tests:** 262 (`npm test`)
 
-ExitPlan is the pre-flight check for raising cash from a Solana–Hyperliquid hedge: it finds the routes that keep your exposure, margin and debt rules, explains the routes that fail, and simulates the Solana transactions before you sign.
-
-Phantom put Hyperliquid perps one tap away from Solana spot, so a common position now spans two chains: SOL and USDC (often in Kamino) on Solana, and a Hyperliquid short that hedges it and earns funding. When you need cash, every lever breaks something: sell SOL and you are net short; pull margin and your liquidation price drops; withdraw from Kamino and you depend on a pool that is 93% lent out. No app sees both sides, so people unwind by feel and learn what broke after they sign.
-
-You give ExitPlan a **cash goal plus the limits you refuse to break** (new-debt cap, keep net SOL exposure, keep-SOL-quantity, minimum margin buffer). It reads both chains by address, evaluates up to dozens of routes, shows every route that fits and every route that does not, with the reason, and rehearses the chosen route with real `simulateTransaction` runs for the Solana legs. Nothing is signed or sent. Standard and Unified Hyperliquid accounts are supported; portfolio margin is not modelled.
+Give ExitPlan two addresses (a Solana wallet, a Hyperliquid account), a cash goal and the limits you refuse to break. It reads both chains, finds every route that keeps your exposure, margin and debt rules, explains every route that fails, prices each one with your own fees and the carry it gives up, and rehearses the legs before you sign: the Solana transactions through real `simulateTransaction` runs, the Hyperliquid order built on the live book. **Nothing is ever signed or sent.**
 
 ![Position summary on a live standard account: SOL spot, Hyperliquid short, net exposure, HL withdrawable with the model buffer and floor meter, liquidation distance, Kamino deposit, wallet USDC, and the pre-flight check summary](docs/images/preflight-readout.png)
 
-![The pre-flight checks expanded: account mode, net exposure, liquidation, HL margin buffer against the exchange's withdrawable, Kamino pool cash, wallet USDC, carry, other positions, not simulated](docs/images/preflight-checks.png)
+## Why this exists
+
+Phantom put Hyperliquid perps one tap away from Solana spot, so a common position now spans two chains: SOL and USDC (often in Kamino) on Solana, and a Hyperliquid short that hedges it and earns funding (about 8–9% a year over the last week). When you need cash, every lever breaks something: sell SOL and you are net short; pull margin and your liquidation price drops; withdraw from Kamino and you depend on a pool that is 93% lent out. No app sees both sides, so people unwind by feel and learn what broke after they sign.
+
+## Try it in three clicks
+
+1. Open https://exitplan-rouge.vercel.app and press **Try on live accounts (read-only)**. It loads two public addresses, lands on a $500 goal and selects the paired trim route. (Or paste your own addresses, or open a deep link such as `#sol=…&hl=…&target=500`.)
+2. Read the summary strip and the pre-flight line ("5 ok · 1 warning"); press **Show checks** for the reasons. Change the goal or the rules and watch routes pass or fail, each with a sentence that says why.
+3. Press **Step-by-step rehearsal**. The Hyperliquid step walks the live order book and shows the unsigned reduce-only order you would sign; the Kamino and Jupiter steps run real Solana simulations and link each unsigned transaction to Solana Explorer's inspector.
 
 <p align="center"><img src="docs/images/rehearsal-hyperliquid.png" width="49%" alt="Rehearsal, Hyperliquid step: the live order book walked for a 1.5 SOL buy-back, taker fee, cost against the plan, book age, and the unsigned reduce-only IOC order"> <img src="docs/images/rehearsal-solana.png" width="49%" alt="Rehearsal, Solana step: the Jupiter swap simulated with simulateTransaction, quoted USDC against the plan estimate, and a Solana Explorer inspector link for the unsigned transaction"></p>
 
-## What is real in this build
+## What is real, and how you can check it
 
-- **Real positions by address, Phantom connect, or a deep link.** Enter a Solana wallet and a Hyperliquid address, press *Connect wallet (read-only)* (Phantom, OKX or any injected wallet: it reads the Solana address and the EVM address used on Hyperliquid, never signs), open a `#sol=…&hl=…&target=…` link, or press *Load public example*. The browser reads them read-only from public APIs: SOL balance (publicnode RPC), Kamino main-market USDC deposits and borrows (Kamino API), the SOL short, equity, withdrawable and other positions on Hyperliquid (public info API), the HyperCore account mode (`userAbstraction`), USDC already sitting in the wallet (Jupiter balances, used first at zero fee), and a live Jupiter quote for SOL → USDC.
-- **Real transaction simulation, two legs.** In the rehearsal, the Solana sell leg builds an unsigned Jupiter swap for the entered wallet and runs Solana `simulateTransaction` (signature verification off, fresh blockhash). The Kamino withdrawal leg builds the real unsigned withdraw transaction with Kamino's SDK in a server function (create ATA if needed, refresh reserve, refresh obligation, withdraw and redeem), simulates it the same way, and reads the wallet's USDC token account from the simulation to report **what would actually arrive** against the plan. You see success or the exact program error, compute units and the instruction list, plus a Solana Explorer inspector link and a copy of the unsigned transaction so anyone can read what would be signed. Nothing is ever sent.
-- **Fees from your account and a read-only fill preview on Hyperliquid.** The short-reduction fee is your own taker rate from the public `userFees` endpoint (rounded up to the basis point) instead of a fixture, and in the rehearsal the reduce-short step walks the live SOL order book to show the average buy-back price, slippage in basis points, levels used and the estimated fee. It also shows the inner unsigned order parameters the user would sign (reduce-only IOC: asset index, lot-sized size, tick-rounded limit with a 0.5% cap; withheld when the book is stale or the size is under the $10 minimum), the buy-back cost against the plan's mark and the book's age. No order is placed; the withdrawal step still needs a signed request and stays unsimulated.
-- **Margin math that matches the exchange.** For live Standard and Unified accounts the model's withdrawable matches Hyperliquid's reported withdrawable within a dollar (a cent on the standard example), and the mark comes from the position's own value; the liquidation estimate is anchored on the exchange's number.
-- **Deterministic route engine** that enumerates withdrawals, sales, paired unwinds, short-only reductions with released margin, and borrowing comparisons, with integer-cent arithmetic, fail-closed validation and 262 automated tests, including a 650-plan conservation grid.
-- **AI intent with confirmation.** Describe the goal in your own words; a server function turns it into a constraint proposal (OpenAI structured output, validated against a schema), and nothing applies until you confirm.
-- **Pre-flight readout.** After an import, a checklist grades what matters before any unwind: account mode verified, net exposure (flagged when not neutral), liquidation distance, HL margin buffer against your floor, Kamino reserve liquidity against your deposit, wallet USDC, other positions, and what is not simulated.
-- **Carry given up per route.** Every route shows the yearly carry it gives up at today's rates: funding on the SOL short reduced (7-day average from Hyperliquid's funding history) plus supply yield on the Kamino deposit withdrawn (reserve supply APY). Routes are still ranked by upfront fees; the carry figure is there to change the decision, not the sort.
-- **Copy-able pre-flight report.** One button turns the checks, every route with its fees and carry, the rejected routes with reasons and the deep link into a plain-text report to paste into a chat or a ticket.
-- **Placeable quantities.** Short reductions are sized in Hyperliquid's SOL lot (0.01 SOL, read from `meta`) and reductions below the $10 minimum order are rejected with the reason, so every route is one the exchange would accept.
-- **Liquidation price before and after.** The exchange's own liquidation price is shown at load, and after a route an estimate anchored on that price (maintenance margin = 1 / (2 × max leverage)) shows where it would move. It is labelled an estimate.
-- **Kamino withdraw capacity capped by reserve liquidity** read from Kamino's reserve metrics at load.
-- **Public Hyperliquid market reference** (SOL perp mid) shown next to the planning price, never silently substituted.
+| Claim | How it is verified | Where to look |
+| --- | --- | --- |
+| Positions are read by address from public APIs only | Solana RPC, Kamino API, Jupiter, Hyperliquid info API; the request log in Chrome shows nothing else | `web/adapters/`, `docs/integrations.md` |
+| The Hyperliquid account mode is verified | `userAbstraction` on HyperCore: Standard and Unified import, portfolio margin and vaults are rejected with the reason; a `default` setting is established from the balances and always warned | `web/adapters/hyperliquid.mjs` |
+| Margin math matches the exchange | Every position reserves max(initial margin, 10% of notional), Hyperliquid's transfer rule; on live accounts the model's withdrawable matched the exchange's within a dollar (to the cent on the standard example); any gap from resting orders is shown as such | pre-flight check "HL margin buffer", `docs/verification.md` |
+| Routes are placeable | Short reductions sized in the 0.01 SOL lot from `meta`, checked against the $10 minimum, priced at your own `userFees` taker rate plus a 10 bps execution allowance | route cards, `docs/engine.md` |
+| The Hyperliquid leg is built, not imagined | `l2Book` walk: average buy-back price, slippage, levels, book age, cost against the plan, and the inner unsigned reduce-only IOC order (asset index, size, tick-rounded limit capped at the allowance); withheld when the book is stale | rehearsal, step "Reduce SOL short" |
+| The Solana legs really simulate | Kamino's SDK builds the real withdrawal, Jupiter builds the real swap; both run through `simulateTransaction` and report compute units and what would arrive; each has a Solana Explorer inspector link and a copy of the unsigned transaction | rehearsal, steps "Withdraw deposited USDC" and "Sell SOL spot" |
+| Carry is visible | Each route shows the yearly carry it gives up: 7-day average funding on the short reduced plus Kamino supply APY on the deposit withdrawn (shown, not ranked) | route cards, pre-flight check "Carry" |
+| The engine is deterministic and fail-closed | Integer-cent arithmetic, duplicate allocations collapsed, 262 tests including a 650-plan conservation grid and a lot-size property grid | `web/engine.mjs`, `tests/` |
+| AI never acts on its own | Plain-English goal → schema-validated constraint proposal → applied only after you confirm | `api/intent.js`, `server/intent.mjs` |
+| It composes | The same adapters, engine and report run from the terminal; the engine and report are dependency-free modules | `bin/exitplan.mjs`, `web/report.mjs` |
 
 ## What is not real (yet)
 
-- No execution. No signing, sending, bridging, borrowing or trading; the wallet button only reads addresses.
-- Hyperliquid legs are not simulated (they need signed exchange requests); the reduce-short step gets a read-only order-book preview, the withdrawal step is listed only.
-- Fees other than the Jupiter-quoted sale and your Hyperliquid taker rate, the margin reserve rule, durations and borrowing terms are model assumptions and are labelled as such in the app.
-- **Standard and Unified Hyperliquid accounts.** The account mode is verified on HyperCore; a `default` setting is established from the balances when they allow it, and the readout warns in every `default` case to confirm the mode in Hyperliquid settings before acting on Hyperliquid routes. Short reductions reserve a 10 bps execution allowance against collateral, and the rehearsal's book walk is compared with it. For a Unified account the spot USDC total is the equity (it already contains the perps margin and unrealised PnL) and withdrawable is total minus hold, both exchange figures; the model cross-checks them against the exchange's available-after-maintenance figure and flags a mismatch (positions on other perp DEXs are not modelled). Other stable collateral (USDH, USDT0, USDE) and SOL held on HyperCore spot are reported but not modelled. Portfolio-margin accounts pool several collateral assets and are rejected with that explanation. Vault addresses (for example HLP) are rejected as not being user accounts. Every position reserves the larger of its initial margin and 10% of its notional, the exchange's transfer rule, which makes the model's free collateral match the exchange's reported withdrawable within a dollar on real accounts; for the SOL short that rate is also what a route releases when it reduces the position.
-- Only Kamino obligations that hold USDC alone are supported; mixed-asset obligations and any existing borrow are rejected with a reason.
-- The margin reserve is max(10% of notional, the position's initial margin), Hyperliquid's transfer rule, not its maintenance margin. The after-route liquidation price is a model estimate for the SOL position alone, anchored on the exchange's number, with other positions held constant.
-- Carry is an estimate at today's rates (7-day average funding, current supply APY), shown per route and not used for ranking; funding changes hourly and the deposit yield changes with utilisation.
-- The minimum margin buffer only blocks routes that lower the Hyperliquid buffer; an account that already sits under the floor can still raise cash on Solana. When the floor is above the current buffer, the import says so and the banner offers to lower it; nothing changes without your click.
-- Ranking means lowest upfront fees among a bounded set of evaluated candidates (dozens, not all), not a global optimum or financial advice.
+- No execution: no signing, sending, bridging, borrowing or trading. The wallet button reads addresses only.
+- The Hyperliquid withdrawal leg is listed, not simulated (it needs a signed exchange request); the HL → Solana delivery fee is a $1 placeholder, not a CCTP quote.
+- Positions on other perp DEXs (HIP-3) are not read; a cross-check flags unified accounts where that matters. Margin reserved by resting orders is not modelled; the readout shows the gap and routes use the exchange's withdrawable.
+- Only Kamino obligations that hold USDC alone are supported; mixed collateral and existing borrows are rejected with a reason.
+- Carry is an estimate at today's rates. Ranking means lowest upfront fees among a bounded set of candidates, not a global optimum or financial advice.
 
-## Try it
+## Why it fits each track
 
-1. Open the live site. The default is a synthetic scenario (100 SOL, 3,000 USDC deposited, 100 SOL short). Walk the three guided scenarios.
-2. Switch **Portfolio source** to *Import by address*, paste a Solana wallet and a Hyperliquid address (public examples in `docs/demo-addresses.md`) and load.
-3. Set a target, compare routes, open a rejected route to read why. If nothing fits, the banner offers concrete relaxations that do ("Allow selling SOL (keep net exposure) → $5,000 route"). Select a route and open the rehearsal. On the sell step, press *Simulate on Solana (read-only)*. *Copy plan link* gives a shareable deep link.
+**Hyperliquid.** The account is read through the public info API; its Standard or Unified mode is confirmed with `userAbstraction`; free collateral is computed with the exchange's own transfer rule and matched against its reported withdrawable; every reduction is lot-sized, fee-priced from `userFees` and checked against the $10 minimum; the rehearsal walks `l2Book` and shows the exact inner order a user would sign, and never sends it.
+
+**Solana.** Positions come from Solana RPC, the Kamino API and Jupiter by address; the rehearsal builds the real Kamino withdrawal with the Kamino SDK and the real Jupiter swap, runs both through `simulateTransaction`, reports what would arrive against the plan and links each unsigned transaction to Solana Explorer's inspector.
+
+## Verify it yourself in five minutes
+
+```sh
+git clone https://github.com/plutohan/exitplan && cd exitplan
+npm ci --ignore-scripts
+npm test                                                    # 262 tests, no network
+node bin/exitplan.mjs --sol DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK \
+  --hl 0x7b7f72a28fe109fa703eeed7984f2a8a68fedee2 --target 500   # the same report as the site, read-only
+```
+
+Public example accounts (strangers to each other, read-only) and a test matrix of accepted and rejected cases are in `docs/demo-addresses.md`; `docs/verification.md` records what was checked live and when.
 
 ## Run locally
 
@@ -54,22 +65,10 @@ Requires Node.js 20+. The browser app has no dependencies; the Kamino simulation
 
 ```sh
 npm ci --ignore-scripts
-npm test                       # 262 tests: engine, adapters, server, UI
 npx vercel dev                 # serves web/ and the api/ functions
 ```
 
-AI needs two server-side environment variables, never in the browser: `OPENAI_API_KEY` and `OPENAI_MODEL`. Without them the AI panel says it is offline and everything else works. The Kamino simulation uses the public Solana RPC by default; set `SOLANA_RPC_URL` to use your own. `package.json` pins `uuid@9` under `rpc-websockets` (an `@solana/web3.js` 1.x dependency of the SDK) because the serverless runtime cannot `require()` the ESM-only `uuid@14`.
-
-## Use it from the terminal
-
-The same adapters, engine and report run in Node without the UI, so the pre-flight can sit in a script, a bot or a CI job:
-
-```sh
-node bin/exitplan.mjs --sol <solana wallet> --hl <0x address> --target 500          # plain-text report
-node bin/exitplan.mjs --sol … --hl … --target 500 --keep-sol --json               # engine result as JSON
-```
-
-Flags: `--max-debt`, `--min-buffer`, `--deadline`, `--keep-sol`, `--no-hedge`, `--select <route id>`. It reads the same public endpoints and never signs or sends.
+Server-side environment variables, never in the browser: `OPENAI_API_KEY` and `OPENAI_MODEL` for the AI panel (without them it says it is offline and everything else works), and optional `SOLANA_RPC_URL` for the Kamino simulation (defaults to the public mainnet RPC). `package.json` pins `uuid@9` under `rpc-websockets` because the serverless runtime cannot `require()` the ESM-only `uuid@14`.
 
 ## Use the engine as a library
 
@@ -83,47 +82,42 @@ console.log(result.best.id, result.best.netCash, `${result.feasible.length} of $
 for (const plan of result.plans.filter(p => !p.feasible)) console.log(plan.id, plan.rejections);
 ```
 
-The portfolio shape is documented in `docs/engine.md`; the adapters in `web/adapters/` show how to build one from public APIs.
+The portfolio shape is documented in `docs/engine.md`; the adapters in `web/adapters/` show how to build one from public APIs, and `web/report.mjs` turns a result into the pre-flight checks and the plain-text report.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-  A[Solana address] --> S[adapters/solana.mjs<br/>RPC balance · Kamino obligations + liquidity · Jupiter quote + wallet balances]
-  B[Hyperliquid address] --> H[adapters/hyperliquid.mjs<br/>clearinghouseState · allMids · userAbstraction]
+  A[Solana address] --> S[adapters/solana.mjs<br/>RPC balance · Kamino obligations, liquidity, supply APY · Jupiter quote + wallet balances]
+  B[Hyperliquid address] --> H[adapters/hyperliquid.mjs<br/>clearinghouseState · spotClearinghouseState · userAbstraction · vaultDetails · fundingHistory · userFees · meta]
   S --> P[imported portfolio]
   H --> P
-  P --> E[engine.mjs<br/>pure route enumeration + constraint checks]
-  E --> U[app.mjs<br/>compare · reject reasons · suggestions · rehearsal]
-  U --> R[adapters/rehearsal.mjs<br/>Jupiter swap build → simulateTransaction]
+  P --> E[engine.mjs<br/>pure route enumeration, lot sizing, constraint checks, carry]
+  E --> U[app.mjs · bin/exitplan.mjs<br/>summary · checks · routes · rehearsal · report]
+  U --> R[adapters/rehearsal.mjs<br/>l2Book walk + unsigned order · Jupiter swap → simulateTransaction]
   U --> K[api/kamino-withdraw.js<br/>Kamino SDK → unsigned withdraw → simulateTransaction]
   U --> I[api/intent.js<br/>OpenAI structured output → proposal → confirm]
 ```
 
+Every adapter fails closed with a reason code; the UI never substitutes cached or scenario numbers when a load fails. One retry covers a transient 429 or 5xx; a failed Jupiter swap quote falls back to Jupiter's price endpoint with a conservative fee and says so.
 
-```
-browser (web/)                                     Vercel functions (api/)
-  engine.mjs        pure route enumeration           status.js   capability flags
-  adapters/         read-only public API clients     market.js   Hyperliquid SOL mid
-    hyperliquid.mjs info API → engine shape          intent.js   OpenAI structured output
-    solana.mjs      RPC + Kamino + Jupiter → shape    server/     shared handlers + tests
-    rehearsal.mjs   Jupiter swap → simulateTransaction; Kamino withdraw via api/
-                                                       kamino-withdraw.js  Kamino SDK → unsigned withdraw → simulateTransaction
-  app.mjs           constraints, comparison, rehearsal, AI confirmation
-```
+## Roadmap
 
-Every adapter fails closed with a reason code; the UI never substitutes cached or scenario numbers when a load fails. The engine accepts `evidence: 'scenario'` or `'imported'` and carries that label onto every plan card.
+1. One-click execution: Phantom signs the Solana legs, a Hyperliquid builder code routes the short, CCTP brings the USDC home; the pre-flight becomes the confirmation screen.
+2. Watch tier: a standing pre-flight that alerts when a plan stops being feasible, carry flips or liquidation gets close.
+3. Embeddable check for wallets and front-ends that already earn builder fees.
 
 ## Disclosure
 
-All commits are dated 2026-10-11 and 2026-10-12 (UTC+4), inside the hackathon window, by a solo builder working with AI coding assistants. The synthetic engine and UI were generated that morning with OpenAI's app tooling and imported as the first commit, which is why the history starts from a complete snapshot; the real-data adapters, Vercel deployment, English copy and several rounds of AI-assisted code review (Claude, Codex and Claude Opus) followed over the two days. No code predates the window. Public addresses listed in `docs/demo-addresses.md` belong to other people; they are read-only examples and are not ours.
+All commits are dated 2026-10-11 and 2026-10-12 (UTC+4), inside the hackathon window, by a solo builder working with AI coding assistants. The synthetic engine and UI were generated on the morning of the 11th with OpenAI's app tooling and imported as the first commit, which is why the history starts from a complete snapshot; the real-data adapters, Vercel deployment, English copy and several rounds of AI-assisted code review (Claude, Codex and Claude Opus) followed over the two days. No code predates the window. Public addresses listed in `docs/demo-addresses.md` belong to other people; they are read-only examples and are not ours.
 
 ## Documents
 
 - `docs/engine.md` — route engine contract and verified examples
 - `docs/integrations.md` — API boundaries and what each adapter does and does not claim
-- `docs/demo-addresses.md` — public example addresses
-- `docs/pitch-video-script.md`, `docs/demo-video-script.md`, `docs/submission-copy.md`
+- `docs/demo-addresses.md` — public example addresses and the test matrix
+- `docs/verification.md` — what was checked live, and when
+- `docs/launch-checklist.md`, `docs/pitch-video-script.md`, `docs/demo-video-script.md`, `docs/submission-copy.md`
 - `docs/superpowers/specs/` and `docs/superpowers/plans/` — design spec and implementation plan
 
 This is a planning prototype, not investment, lending or tax advice, and not an assurance that any real exit is safe or available.
