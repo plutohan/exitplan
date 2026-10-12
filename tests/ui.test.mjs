@@ -1221,7 +1221,7 @@ test('the position summary strip shows the numbers that matter at a glance, with
   assert.match(kpi('buffer').textContent, /\$5,4\d\d/);
   assert.match(kpi('buffer').textContent, /floor \$1,500/);
   const meter = kpi('buffer').querySelector('.meter > span');
-  assert.ok(meter && /width:\s*\d+(\.\d+)?%/.test(meter.getAttribute('style')), 'buffer meter has a width');
+  assert.ok(meter && /^\d+(\.\d+)?%$/.test(meter.style.width), 'buffer meter width is set through the CSSOM (the CSP forbids inline style attributes): ' + meter.style.width);
   assert.match(kpi('liquidation').textContent, /\$267/);
   assert.match(kpi('liquidation').textContent, /1\d\d% away/);
   assert.match(kpi('kamino').textContent, /\$9,607/);

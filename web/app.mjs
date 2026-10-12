@@ -843,7 +843,10 @@ function renderSummary() {
     { key: 'kamino', label: 'Kamino deposit', value: bigMoney(s.lending.usdc), sub: isImported && imported.solana.reported.reserveLiquidity != null ? `pool cash ${money(imported.solana.reported.reserveLiquidity)}` : `withdrawable ${money(s.lending.withdrawCapacity)}` },
     { key: 'wallet', label: 'Wallet USDC', value: money(s.wallet.usdc, true), sub: 'used first, no fee' },
   ];
-  $('#summary-kpis').innerHTML = tiles.map((tile) => `<div class="kpi ${tile.warn ? 'warn' : ''} ${tile.value.length > 9 ? 'long' : ''}" data-kpi="${tile.key}"><span class="kpi-label">${esc(tile.label)}</span><b>${esc(tile.value)}</b><small>${esc(tile.sub)}</small>${tile.meter != null ? `<div class="meter" aria-hidden="true"><span style="width:${tile.meter.toFixed(1)}%"></span>${tile.marker != null ? `<i style="left:${tile.marker.toFixed(1)}%"></i>` : ''}</div>` : ''}</div>`).join('');
+  $('#summary-kpis').innerHTML = tiles.map((tile) => `<div class="kpi ${tile.warn ? 'warn' : ''} ${tile.value.length > 9 ? 'long' : ''}" data-kpi="${tile.key}"><span class="kpi-label">${esc(tile.label)}</span><b>${esc(tile.value)}</b><small>${esc(tile.sub)}</small>${tile.meter != null ? `<div class="meter" aria-hidden="true"><span data-width="${tile.meter.toFixed(1)}"></span>${tile.marker != null ? `<i data-left="${tile.marker.toFixed(1)}"></i>` : ''}</div>` : ''}</div>`).join('');
+  // Widths go through the CSSOM: the CSP allows no inline style attributes in markup.
+  $$('#summary-kpis .meter > span').forEach((bar) => { bar.style.width = `${bar.dataset.width}%`; });
+  $$('#summary-kpis .meter > i').forEach((mark) => { mark.style.left = `${mark.dataset.left}%`; });
   $('#summary-badge').textContent = evidenceLabel();
 }
 function renderPreflight() {
