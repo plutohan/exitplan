@@ -336,16 +336,11 @@ function updateControls() {
   $('#preserve-sol').checked = constraints.preserveSolQuantity;
   $('#preserve-hedge').checked = constraints.preserveHedge;
   $('#min-buffer').value = constraints.minHlBuffer;
-  const debt = $('#max-debt');
-  $$('option[data-custom]', debt).forEach((n) => n.remove());
-  if (![...debt.options].some((o) => Number(o.value) === constraints.maxNewDebt)) {
-    const o = document.createElement('option');
-    o.value = constraints.maxNewDebt;
-    o.textContent = `Up to ${money(constraints.maxNewDebt)}`;
-    o.dataset.custom = 'true';
-    debt.append(o);
-  }
-  debt.value = constraints.maxNewDebt;
+  $('#max-debt').value = constraints.maxNewDebt;
+  const borrow = portfolio.solana.borrow;
+  $('#debt-capacity').textContent = borrow?.enabled && borrow.capacity > 0
+    ? `0 = no new debt · up to ${money(Math.floor(borrow.capacity))} available against your SOL${portfolio.evidence === 'imported' ? ' (model estimate)' : ''}`
+    : '0 = no new debt · no borrow capacity read for this wallet';
   $$('[data-target]').forEach((b) => b.classList.toggle('selected', Number(b.dataset.target) === constraints.target));
   $('.deadline-note').innerHTML =
     icon('clock') + `Planning window ${num(constraints.deadlineHours)} h · assumptions recalculated instantly`;
@@ -411,10 +406,13 @@ $('#preserve-hedge').addEventListener('change', (e) => {
   constraints.preserveHedge = e.target.checked;
   changed();
 });
-$('#max-debt').addEventListener('change', (e) => {
-  constraints.maxNewDebt = Number(e.target.value);
+const readDebtLimit = (e) => {
+  const value = Number(e.target.value);
+  constraints.maxNewDebt = Number.isFinite(value) && value > 0 ? Math.floor(value) : 0; // blank, negative or junk means no new debt
   changed();
-});
+};
+$('#max-debt').addEventListener('input', readDebtLimit);
+$('#max-debt').addEventListener('change', readDebtLimit);
 $$('[data-target]').forEach((button) =>
   button.addEventListener('click', () => {
     constraints.target = Number(button.dataset.target);

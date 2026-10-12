@@ -1523,3 +1523,19 @@ test('the detail dialog is named by its title for assistive technology', async t
   const ui = await mount(t);
   assert.equal(ui.get('#detail-dialog').getAttribute('aria-labelledby'), 'dialog-title');
 });
+
+test('the new-debt limit is typed as a dollar amount, defaults to no new debt and shows what the wallet could borrow', async t => {
+  const ui = await mount(t);
+  const input = ui.get('#max-debt');
+  assert.equal(input.tagName.toLowerCase(), 'input');
+  assert.equal(input.getAttribute('type'), 'number');
+  assert.equal(input.value, '0');
+  assert.match(ui.get('#debt-capacity').textContent, /\$3,000/, 'the synthetic wallet can borrow up to $3,000 against its SOL');
+  assert.match(ui.get('#debt-capacity').textContent, /no new debt/i);
+  await ui.input('#max-debt', 350);
+  await ui.input('#preserve-sol', true, 'change'); // any re-render reads the stored constraint back into the field
+  assert.equal(ui.get('#max-debt').value, '350');
+  await ui.input('#max-debt', -5);
+  await ui.input('#preserve-sol', false, 'change');
+  assert.equal(ui.get('#max-debt').value, '0', 'negative or empty input means no new debt');
+});
