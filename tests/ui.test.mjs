@@ -1428,3 +1428,41 @@ test('reset clears the deep link so a reload does not resurrect the imported pla
   await ui.click('.reset-all');
   assert.doesNotMatch(String(globalThis.location.hash || ''), /sol=/); // the app reads the global location the harness installs
 });
+
+test('an imported rehearsal that skips its simulations ends with warnings, not a clean completion', async t => {
+  const ui = await mount(t, { externalResponse: external() });
+  await importPositions(ui);
+  await ui.input('#target', 500);
+  await ui.click('[data-plan="paired-unwind"]');
+  await ui.click('#rehearse');
+  for (let i = 0; i < 8 && !/Rehearsal complete/.test(ui.get('#dialog-title').textContent); i++) await ui.click('#rehearsal-next'); // review every step without simulating
+  assert.match(ui.get('#dialog-title').textContent, /Rehearsal complete with warnings/);
+  const summary = ui.get('.rehearsal-complete').textContent;
+  assert.match(summary, /not run/);
+  assert.doesNotMatch(summary, /all steps reviewed/);
+  assert.ok(ui.get('.rehearsal-complete').classList.contains('warn'), 'the completion block carries the warning class');
+});
+
+test('an imported rehearsal whose simulations all pass still ends clean', async t => {
+  const base = external();
+  const ui = await mount(t, { externalResponse: async call => {
+    const target = new URL(call.url);
+    if (target.pathname === '/swap/v1/swap') return json({ swapTransaction: FAKE_TX });
+    if (target.host === 'solana-rpc.publicnode.com' && JSON.parse(call.body).method === 'simulateTransaction') return json({ jsonrpc: '2.0', id: 1, result: { context: { slot: 1 }, value: { err: null, logs: ['x', 'y'], unitsConsumed: 4242 } } });
+    return base(call);
+  }, kaminoResponse: { ok: true, deliveredUsdc: 163.6, planUsdc: 163.6, computeUnits: 1, logs: 1, instructions: [] } });
+  await importPositions(ui);
+  await ui.input('#target', 500);
+  await ui.click('[data-plan="paired-unwind"]');
+  await ui.click('#rehearse');
+  for (let i = 0; i < 8 && !/Rehearsal complete/.test(ui.get('#dialog-title').textContent); i++) {
+    if (ui.document.querySelector('#simulate-step')) {
+      await ui.click('#simulate-step');
+      for (let j = 0; j < 200 && /Reading|Simulating/.test(ui.get('#simulation-result')?.textContent || ''); j++) await flush();
+    }
+    await ui.click('#rehearsal-next');
+  }
+  assert.match(ui.get('#dialog-title').textContent, /Rehearsal complete/);
+  const summary = ui.get('.rehearsal-complete').textContent;
+  assert.doesNotMatch(summary, /not run|failed|warnings/, summary);
+});

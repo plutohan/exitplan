@@ -573,6 +573,15 @@ function simulationBlock(step) {
           : `Simulation failed: ${sim.result.error}`;
   return `<div class="simulation"><button id="simulate-step" class="secondary-button" type="button" ${sim?.pending ? 'disabled' : ''}>${hlPreview ? 'Preview fill on the Hyperliquid book (read-only)' : kamino ? 'Simulate Kamino withdrawal (read-only)' : 'Simulate on Solana (read-only)'}</button><p id="simulation-result" class="simulation-note ${sim && !sim.pending && (sim.error || !sim.result.ok || (kamino && kaminoShortfall(sim.result, step)) || (hlPreview && sim.result.partial)) ? 'error' : ''}">${esc(text)}</p>${sim?.result?.inspectorUrl ? `<p class="simulation-links"><a id="inspector-link" href="${esc(sim.result.inspectorUrl)}" target="_blank" rel="noopener noreferrer">Inspect the unsigned transaction on Solana Explorer ↗</a> · <button id="copy-tx" class="link-button" type="button">Copy unsigned transaction (base64)</button></p>` : ''}${hlPreview && sim?.result?.ok ? `<p class="simulation-links"><a href="https://app.hyperliquid.xyz/trade/SOL" target="_blank" rel="noopener noreferrer">Open SOL on Hyperliquid ↗</a></p>` : ''}${hlPreview && sim?.result?.order ? `<pre id="order-preview" class="order-preview">Inner unsigned order parameters you would sign (reduce-only IOC; limit = the lower of worst walked level + ${sim.result.slippageCapBps / 100}% and mark + the ${sim.result.maxSlippageBps ?? 0} bps allowance, tick-rounded; never sent): ${esc(JSON.stringify(sim.result.order))}</pre>` : ''}</div>`;
 }
+/** What a reviewed step proved: 'ok', 'warn' (ran, but partial fill or shortfall), 'failed', 'not-run' (simulatable but skipped) or 'n/a' (nothing to simulate). */
+function stepOutcome(step, sim) {
+  if (!imported || portfolio.evidence !== 'imported' || !simulatable(step)) return 'n/a';
+  if (!sim || sim.pending) return 'not-run';
+  if (sim.error || !sim.result?.ok) return 'failed';
+  const kamino = step.action.startsWith('Withdraw lending'), hlPreview = step.action.startsWith('Reduce SOL short');
+  if ((kamino && kaminoShortfall(sim.result, step)) || (hlPreview && sim.result.partial)) return 'warn';
+  return 'ok';
+}
 async function runSimulation() {
   if (!rehearsal || !imported) return;
   const current = rehearsal,
@@ -606,9 +615,13 @@ function renderRehearsal() {
     return;
   }
   const done = index >= plan.steps.length;
+  const outcomes = Object.values(rehearsal.outcomes || {});
+  const tally = (kind) => outcomes.filter((o) => o === kind).length;
+  const verdict = { ok: tally('ok'), warn: tally('warn'), failed: tally('failed'), notRun: tally('not-run') };
+  const clean = verdict.warn + verdict.failed + verdict.notRun === 0;
   openDialog(
-    done ? 'Rehearsal complete' : 'Step by step: where the assets go',
-    `<p>${esc(planName(plan))} · target net cash ${money(plan.netCash)}</p><div class="dialog-disclaimer rehearsal-disclaimer">${portfolio.evidence === 'imported' ? 'Read-only rehearsal. Steps come from the imported snapshot; nothing is signed or sent and no balance changes.' : 'Synthetic rehearsal. It walks through the steps on screen and does not change any account, balance or position.'}</div>${plan.steps.map((s, i) => `<div class="rehearsal-step ${i < index ? 'done' : i === index ? 'current' : ''}"><span class="rehearsal-number">${i < index ? '✓' : i + 1}</span><div><h3>${esc(stepName(s))} · ${s.unit === 'USDC' ? money(s.amount) : num(s.amount) + ' SOL'}</h3><p>${stepVenue(s)} · ${i < index ? 'step reviewed' : i === index ? 'current step' : 'next step'}${s.action.startsWith('Reduce') ? ' · the short notional is not counted as cash' : ''}</p>${portfolio.evidence === 'imported' && i === index ? simulationBlock(s) : ''}</div></div>`).join('')}${done ? `<div class="rehearsal-complete">${icon('check')}Expected net cash ${money(plan.netCash)} · all steps reviewed</div>` : ''}<div class="rehearsal-actions"><button id="rehearsal-reset" class="secondary-button">${done ? 'Replay' : 'Cancel'}</button><button id="rehearsal-next" class="primary-button" ${rehearsal.simulation?.pending ? 'disabled' : ''}>${done ? 'Back to comparison' : 'Review this step'} ${icon('arrow')}</button></div>`,
+    done ? (clean ? 'Rehearsal complete' : 'Rehearsal complete with warnings') : 'Step by step: where the assets go',
+    `<p>${esc(planName(plan))} · target net cash ${money(plan.netCash)}</p><div class="dialog-disclaimer rehearsal-disclaimer">${portfolio.evidence === 'imported' ? 'Read-only rehearsal. Steps come from the imported snapshot; nothing is signed or sent and no balance changes.' : 'Synthetic rehearsal. It walks through the steps on screen and does not change any account, balance or position.'}</div>${plan.steps.map((s, i) => `<div class="rehearsal-step ${i < index ? 'done' : i === index ? 'current' : ''}"><span class="rehearsal-number">${i < index ? '✓' : i + 1}</span><div><h3>${esc(stepName(s))} · ${s.unit === 'USDC' ? money(s.amount) : num(s.amount) + ' SOL'}</h3><p>${stepVenue(s)} · ${i < index ? 'step reviewed' : i === index ? 'current step' : 'next step'}${s.action.startsWith('Reduce') ? ' · the short notional is not counted as cash' : ''}</p>${portfolio.evidence === 'imported' && i === index ? simulationBlock(s) : ''}</div></div>`).join('')}${done ? (clean ? `<div class="rehearsal-complete">${icon('check')}Expected net cash ${money(plan.netCash)} · all steps reviewed${verdict.ok ? ` · ${verdict.ok} leg${verdict.ok === 1 ? '' : 's'} simulated OK` : ''}</div>` : `<div class="rehearsal-complete warn">${icon('warning')}Expected net cash ${money(plan.netCash)} is not confirmed: ${verdict.ok} simulated OK · ${verdict.notRun} not run · ${verdict.failed} failed${verdict.warn ? ` · ${verdict.warn} with warnings` : ''}. Replay and run every leg before you sign.</div>`) : ''}<div class="rehearsal-actions"><button id="rehearsal-reset" class="secondary-button">${done ? 'Replay' : 'Cancel'}</button><button id="rehearsal-next" class="primary-button" ${rehearsal.simulation?.pending ? 'disabled' : ''}>${done ? 'Back to comparison' : 'Review this step'} ${icon('arrow')}</button></div>`,
     'REHEARSAL · NO TRANSACTIONS',
   );
   $('#rehearsal-next').addEventListener('click', () => {
@@ -616,6 +629,7 @@ function renderRehearsal() {
       $('#detail-dialog').close();
       rehearsal = null;
     } else {
+      rehearsal.outcomes = { ...(rehearsal.outcomes || {}), [rehearsal.index]: stepOutcome(plan.steps[rehearsal.index], rehearsal.simulation) };
       rehearsal.index++;
       rehearsal.simulation = null;
       if (rehearsal.index >= plan.steps.length && portfolio.evidence === 'imported') track('rehearsal-complete');
