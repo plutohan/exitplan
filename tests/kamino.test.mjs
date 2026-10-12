@@ -102,3 +102,21 @@ test('the Kamino market is cached for 30 seconds per RPC to spare the public end
   await simulateKaminoWithdraw({ wallet: WALLET, amountUsdc: 1 }, { sdk, rpcUrl: 'https://cache.example', now });
   assert.equal(calls.filter(c => c[0] === 'load').length, 2);
 });
+
+test('a slot whose block the RPC does not have yet is retried on an older slot instead of failing the simulation', async () => {
+  const sdk = fakeSdk();
+  const slotCalls = [], ledgerSlots = [];
+  const rpc = sdk.createSolanaRpc('https://rpc.example');
+  rpc.getSlot = (options) => { slotCalls.push(options); return { send: async () => 455_000_000n }; };
+  sdk.resolveLedgerInstantForSlot = async (_rpc, slot) => {
+    ledgerSlots.push(slot);
+    if (ledgerSlots.length === 1) { const error = new Error('Solana error #-32004; Block not available for slot 455000000'); error.context = { __code: -32004 }; throw error; }
+    return { slot, blockTime: 1_791_741_027n };
+  };
+  const result = await simulateKaminoWithdraw({ wallet: 'DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK', amountUsdc: 74.99 }, { sdk });
+  assert.equal(result.status, 200, JSON.stringify(result.body));
+  assert.equal(result.body.ok, true);
+  assert.deepEqual(slotCalls, [{ commitment: 'finalized' }], 'the slot must be a finalized one, whose block every node has');
+  assert.equal(ledgerSlots.length, 2);
+  assert.ok(ledgerSlots[1] < ledgerSlots[0], 'the retry uses an older slot');
+});

@@ -62,8 +62,17 @@ export async function simulateKaminoWithdraw(body, { sdk, loadSdkImpl = loadSdk,
     if (!market) return { status: 502, body: { error: 'Kamino market could not be loaded', ok: false } };
     const obligation = await market.getUserVanillaObligation(lib.address(wallet));
     if (!obligation) return { status: 404, body: { error: 'No Kamino obligation found for this wallet in the main market', ok: false } };
-    const slot = await rpc.getSlot().send();
-    const ledger = await lib.resolveLedgerInstantForSlot(rpc, slot, 'exitplan');
+    // A finalized slot is one every node already holds; a processed slot can be ahead of the RPC's block store (-32004 "Block not available").
+    const slot = await rpc.getSlot({ commitment: 'finalized' }).send();
+    let ledger;
+    try {
+      ledger = await lib.resolveLedgerInstantForSlot(rpc, slot, 'exitplan');
+    } catch (error) {
+      const text = `${error?.message || ''} ${error?.context?.__code ?? ''}`;
+      if (!/-32004|not available for slot/i.test(text)) throw error;
+      const older = typeof slot === 'bigint' ? slot - 32n : slot - 32; // one retry, a few seconds back
+      ledger = await lib.resolveLedgerInstantForSlot(rpc, older, 'exitplan');
+    }
     const action = await lib.KaminoAction.buildWithdrawTxns({
       kaminoMarket: market,
       amount: baseUnits,
