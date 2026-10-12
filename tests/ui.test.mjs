@@ -516,6 +516,8 @@ async function importPositions(ui) {
   await ui.input('#solana-address', WALLET);
   await ui.input('#hl-address', HL_ADDRESS);
   await ui.click('#load-positions');
+  // Older Node versions resolve the mocked fetches over more microtask ticks than one click flush covers; wait for the import to settle either way.
+  for (let i = 0; i < 400 && /Loading positions/.test(ui.get('#import-status').textContent); i++) await flush();
 }
 
 test('import by address loads both venues, labels plans IMPORTED and uses the quote price', async t => {
