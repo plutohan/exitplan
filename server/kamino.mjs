@@ -131,7 +131,7 @@ export async function simulateKaminoWithdraw(body, { sdk, loadSdkImpl = loadSdk,
     if (/could not find vanilla obligation/i.test(String(error?.message || ''))) {
       return { status: 404, body: { error: 'No Kamino obligation found for this wallet in the main market', ok: false } };
     }
-    console.error('kamino simulation failed', error?.name, String(error?.message || '').slice(0, 200));
+    console.error('kamino simulation failed', error?.name, String(error?.message || '').slice(0, 200), String(error?.stack || '').split('\n').slice(1, 5).map((l) => l.trim()).join(' <- '));
     return { status: 502, body: { error: 'Kamino simulation is unavailable right now', ok: false } };
   }
 }
