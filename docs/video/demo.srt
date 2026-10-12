@@ -1,0 +1,91 @@
+1
+00:00:00,000 --> 00:00:00,700
+I'm Pluto;
+
+2
+00:00:00,750 --> 00:00:02,200
+I built ExitPlan alone.
+
+3
+00:00:02,250 --> 00:00:04,075
+This is my own hedge:
+
+4
+00:00:04,125 --> 00:00:09,700
+two SOL in my wallet, two SOL short on Hyperliquid, a hundred dollars in Kamino.
+
+5
+00:00:09,750 --> 00:00:13,075
+I need three hundred dollars out without breaking it.
+
+6
+00:00:13,125 --> 00:00:14,575
+Here's what ExitPlan checks.
+
+7
+00:01:20,000 --> 00:01:22,587
+Hyperliquid's withdrawable is not equity minus maintenance margin.
+
+8
+00:01:22,637 --> 00:01:31,488
+I reserve margin with the exchange's transfer rule, the larger of initial margin and 10% of notional per position, and check it against the exchange's own withdrawable.
+
+9
+00:01:31,538 --> 00:01:36,434
+Unified accounts keep the equity in the spot USDC balance, so I read that too.
+
+10
+00:01:36,484 --> 00:01:39,071
+A route the exchange would reject is worthless.
+
+11
+00:01:39,121 --> 00:01:50,939
+Reductions are sized in the 0.01 SOL lot from `meta`, priced at your `userFees` taker rate, checked against the $10 minimum, and the rehearsal walks `l2Book` to build the inner order in the exchange's wire shape.
+
+12
+00:01:50,989 --> 00:01:57,532
+The sell leg is the real Jupiter swap, built for your wallet and run through `simulateTransaction` with signature verification off.
+
+13
+00:01:57,582 --> 00:02:07,093
+The Kamino leg is the real withdraw instruction set, simulated the same way, and I read the USDC token account out of the simulation to report what would arrive.
+
+14
+00:02:07,143 --> 00:02:08,082
+Read-only by design:
+
+15
+00:02:08,132 --> 00:02:12,038
+the first version must be right before it is allowed to act.
+
+16
+00:02:12,088 --> 00:02:13,686
+Integer-cent arithmetic and fail-closed validation:
+
+17
+00:02:13,736 --> 00:02:16,983
+a bad or stale input stops planning instead of guessing.
+
+18
+00:02:17,033 --> 00:02:19,950
+Every number carries its evidence label, scenario or imported.
+
+19
+00:02:20,000 --> 00:02:22,575
+the engine and the report are modules;
+
+20
+00:02:22,625 --> 00:02:26,325
+a bot or a CI job can run the pre-flight.
+
+21
+00:02:40,000 --> 00:02:42,575
+Next is execution behind the same check:
+
+22
+00:02:42,625 --> 00:02:48,950
+Phantom signs the Solana legs, a Hyperliquid builder code routes the short, CCTP brings the USDC home.
+
+23
+00:02:49,000 --> 00:02:51,200
+Today nothing is signed or sent.

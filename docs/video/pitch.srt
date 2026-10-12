@@ -1,0 +1,151 @@
+1
+00:00:00,000 --> 00:00:04,450
+I'm long SOL in my Solana wallet and short SOL on Hyperliquid.
+
+2
+00:00:04,500 --> 00:00:07,075
+Tonight I need three hundred dollars out.
+
+3
+00:00:07,125 --> 00:00:10,075
+Pull margin and my short moves toward liquidation;
+
+4
+00:00:10,125 --> 00:00:12,325
+sell SOL and I'm net short.
+
+5
+00:00:12,375 --> 00:00:16,825
+I'm Pluto, I build Solana developer tooling, and I built ExitPlan alone:
+
+6
+00:00:16,875 --> 00:00:19,075
+the pre-flight check before you unwind.
+
+7
+00:00:20,000 --> 00:00:22,485
+Phantom put Hyperliquid perps one tap from Solana spot.
+
+8
+00:00:22,535 --> 00:00:30,091
+As of today about $__M of SOL is shorted on Hyperliquid, earning shorts about 9% a year, and most of it sits opposite SOL held on Solana.
+
+9
+00:00:30,141 --> 00:00:31,781
+Opening the hedge is one tap.
+
+10
+00:00:31,831 --> 00:00:34,035
+Unwinding it is three apps and a guess:
+
+11
+00:00:34,085 --> 00:00:39,950
+sell SOL and you're net short, pull margin and your liquidation price drops, and Kamino's USDC pool is 93% lent out.
+
+12
+00:00:40,000 --> 00:00:41,093
+The planner is free.
+
+13
+00:00:41,143 --> 00:00:43,379
+The watch tier is ten dollars a month:
+
+14
+00:00:43,429 --> 00:00:47,664
+a standing pre-flight that alerts when the plan breaks, funding flips or liquidation gets close.
+
+15
+00:00:47,714 --> 00:00:53,379
+When execution ships, a few basis points of Hyperliquid builder fee on the short leg plus a Jupiter platform fee;
+
+16
+00:00:53,429 --> 00:00:58,521
+ten thousand dollars at five basis points is five dollars, so that is a floor, not the plan.
+
+17
+00:00:58,571 --> 00:00:59,950
+I run this hedge myself
+
+18
+00:01:00,000 --> 00:01:01,807
+You give it a cash goal and the rules you refuse to break;
+
+19
+00:01:01,857 --> 00:01:04,950
+it shows every route that keeps them, explains every route that doesn't, and rehearses the legs on both chains before you sign.
+
+20
+00:01:55,000 --> 00:01:58,950
+I'm a Solana tooling contributor and I hold this hedge myself.
+
+21
+00:01:59,000 --> 00:02:01,859
+I built ExitPlan solo with AI coding agents:
+
+22
+00:02:01,909 --> 00:02:08,041
+my part was the spec, checking the margin math against the live exchange, and the 262 tests.
+
+23
+00:02:08,091 --> 00:02:10,586
+The hard part was not the UI;
+
+24
+00:02:10,636 --> 00:02:14,950
+it was making the margin model match the exchange on real accounts.
+
+25
+00:02:15,000 --> 00:02:17,575
+Next is execution behind the same check:
+
+26
+00:02:17,625 --> 00:02:23,950
+Phantom signs the Solana legs, a Hyperliquid builder code routes the short, CCTP brings the USDC home.
+
+27
+00:02:24,000 --> 00:02:28,825
+Everything is MIT, and the route engine is a module anyone can import.
+
+28
+00:02:35,000 --> 00:02:35,888
+What's real today:
+
+29
+00:02:35,938 --> 00:02:38,388
+my own hedge, read live from both chains;
+
+30
+00:02:38,438 --> 00:02:40,575
+margin math that matched Hyperliquid's own withdrawable;
+
+31
+00:02:40,625 --> 00:02:43,700
+a Kamino withdrawal and a Jupiter swap simulated on Solana;
+
+32
+00:02:43,750 --> 00:02:46,200
+the Hyperliquid order built on the live book.
+
+33
+00:02:46,250 --> 00:02:47,450
+Nothing signed, nothing sent.
+
+34
+00:02:47,500 --> 00:02:48,100
+ExitPlan:
+
+35
+00:02:47,812 --> 00:02:49,950
+try it read-only on your own accounts.
+
+36
+00:02:50,000 --> 00:02:51,825
+only if the take shows it.
+
+37
+00:02:51,875 --> 00:02:54,012
+Never say the Hyperliquid withdrawal was simulated.
+
+38
+00:02:54,062 --> 00:02:54,950
+Do not say
