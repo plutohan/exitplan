@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { importHyperliquid, estimateLiquidationAfter, AdapterError } from '../web/adapters/hyperliquid.mjs';
+import { importHyperliquid, hasSolShort, estimateLiquidationAfter, AdapterError } from '../web/adapters/hyperliquid.mjs';
 import { planExit, defaultConstraints, createDemoPortfolio, requiredMarginCents } from '../web/engine.mjs';
 
 const fixture = async name => JSON.parse(await readFile(new URL(`./fixtures/${name}.json`, import.meta.url), 'utf8'));
@@ -377,4 +377,26 @@ test('default-mode inference is conservative: a failed spot read proves nothing,
   smaller.balances.find(b => b.coin === 'USDC').total = '1000'; smaller.balances.find(b => b.coin === 'USDC').hold = '0';
   const apart = await importHyperliquid(ADDR, { fetchImpl: fetchFor(unifiedPerps, { mode: 'default', spot: smaller }) });
   assert.deepEqual([apart.reported.effectiveMode, apart.reported.modeEvidence], ['standard', 'inferred'], 'spot smaller than perps equity can only be the standard layout');
+});
+
+test('hasSolShort reports a cross-margin SOL short from a single clearinghouseState read', async () => {
+  const state = await fixture('hl-sol-short');
+  const calls = [];
+  const fetchImpl = async (url, init) => { calls.push(JSON.parse(init.body).type); return Response.json(state); };
+  assert.equal(await hasSolShort(ADDR, { fetchImpl }), true);
+  assert.deepEqual(calls, ['clearinghouseState']);
+});
+
+test('hasSolShort is false for an account with no SOL position and for a SOL long', async () => {
+  const none = await fixture('hl-no-position');
+  assert.equal(await hasSolShort(ADDR, { fetchImpl: async () => Response.json(none) }), false);
+  const long = structuredClone(await fixture('hl-sol-short'));
+  const sol = solPosition(long).position;
+  sol.szi = String(Math.abs(Number(sol.szi)));
+  assert.equal(await hasSolShort(ADDR, { fetchImpl: async () => Response.json(long) }), false);
+});
+
+test('hasSolShort rejects an invalid address and propagates transport failures', async () => {
+  await assert.rejects(hasSolShort('nope', { fetchImpl: async () => Response.json({}) }), e => e instanceof AdapterError && e.code === 'INVALID_ADDRESS');
+  await assert.rejects(hasSolShort(ADDR, { fetchImpl: async () => new Response('down', { status: 404 }) }), e => e instanceof AdapterError);
 });

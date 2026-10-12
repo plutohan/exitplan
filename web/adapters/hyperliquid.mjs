@@ -189,6 +189,15 @@ export async function importHyperliquid(address, { fetchImpl = globalThis.fetch,
  * with mmr = 1 / (2 × max leverage). Withdrawing W and paying fees lower it; closing q SOL frees mmr·q·mark.
  * This is an estimate; the exchange recomputes after execution and other positions move the real number.
  */
+/** One clearinghouseState read: does this account hold a cross-margin SOL short right now? Used to pick a public example that still fits; never used for planning. */
+export async function hasSolShort(address, { fetchImpl = globalThis.fetch, timeoutMs = 8000 } = {}) {
+  if (typeof address !== 'string' || !ADDRESS.test(address)) throw new AdapterError('INVALID_ADDRESS', 'Enter a Hyperliquid address: 0x followed by 40 hex characters');
+  const state = await requestJson(HL_INFO_URL, { method: 'POST', fetchImpl, timeoutMs, body: { type: 'clearinghouseState', user: address } });
+  const positions = Array.isArray(state?.assetPositions) ? state.assetPositions : [];
+  const sol = positions.map((entry) => entry?.position).find((position) => position?.coin === 'SOL');
+  return Boolean(sol) && Number(sol.szi) < 0 && sol.leverage?.type === 'cross';
+}
+
 export function estimateLiquidationAfter({ liquidationPrice, markPrice, shortSol, maxLeverage, withdraw = 0, closeQty = 0, closeFee = 0 }) {
   const values = [liquidationPrice, markPrice, shortSol, maxLeverage, withdraw, closeQty, closeFee];
   if (values.some(value => typeof value !== 'number' || !Number.isFinite(value))) return null;

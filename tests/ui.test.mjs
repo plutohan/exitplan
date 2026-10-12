@@ -774,6 +774,7 @@ test('a deep link pre-fills both addresses and the target and loads positions', 
 test('the example button fills the public addresses and loads; copy link builds a deep link', async t => {
   const ui = await mount(t, { externalResponse: external() });
   await ui.click('#load-example');
+  for (let i = 0; i < 40 && !/Loaded|Could not/.test(ui.get('#import-status').textContent); i++) await flush(); // the example is probed before it loads
   assert.match(ui.get('#solana-address').value, /^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
   assert.match(ui.get('#hl-address').value, /^0x[0-9a-fA-F]{40}$/);
   assert.match(ui.get('#import-status').textContent, /Loaded/);
@@ -1286,4 +1287,28 @@ test('the result banner describes the selected route when it is not the lowest-f
   await ui.click('[data-plan="paired-unwind"]');
   assert.match(ui.get('#result-banner').textContent, /Selected: .*Trim spot and short together/);
   assert.match(ui.get('#result-banner').textContent, /lowest upfront fees: .*Withdraw Solana deposit USDC/);
+});
+
+test('the hero button skips a public example that no longer holds a SOL short and loads the next candidate', async t => {
+  const { PUBLIC_EXAMPLES } = await import('../web/examples.mjs');
+  const long = structuredClone(hlShort);
+  const sol = long.assetPositions.find(a => a.position.coin === 'SOL').position;
+  sol.szi = String(Math.abs(Number(sol.szi)));
+  const probed = [];
+  const fallback = external();
+  const byAddress = async call => {
+    const target = new URL(call.url);
+    if (target.host === 'api.hyperliquid.xyz') {
+      const body = JSON.parse(call.body);
+      if (body.type === 'clearinghouseState') { probed.push(body.user); return json(body.user === PUBLIC_EXAMPLES[0].hyperliquid ? long : hlShort); }
+    }
+    return fallback(call);
+  };
+  const ui = await mount(t, { externalResponse: byAddress });
+  await ui.click('#try-live');
+  for (let i = 0; i < 80 && !/Loaded|Could not/.test(ui.get('#import-status').textContent); i++) await flush();
+  assert.match(ui.get('#import-status').textContent, /Loaded/);
+  assert.equal(ui.get('#hl-address').value, PUBLIC_EXAMPLES[1].hyperliquid);
+  assert.equal(probed[0], PUBLIC_EXAMPLES[0].hyperliquid);
+  assert.equal(ui.get('.plan-card.selected').dataset.plan, 'paired-unwind');
 });

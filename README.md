@@ -1,6 +1,6 @@
 # ExitPlan — the pre-flight check before you unwind a Solana–Hyperliquid hedge
 
-**Live:** https://exitplan-rouge.vercel.app · **Hackathon:** Colosseum Crypto World's Fair 2026, Solana and Hyperliquid tracks · **License:** MIT · **Tests:** 262 (`npm test`)
+**Live:** https://exitplan-rouge.vercel.app · **Hackathon:** Colosseum Crypto World's Fair 2026, Solana and Hyperliquid tracks · **License:** MIT · **Tests:** 271 (`npm test`)
 
 Give ExitPlan two addresses (a Solana wallet, a Hyperliquid account), a cash goal and the limits you refuse to break. It reads both chains, finds every route that keeps your exposure, margin and debt rules, explains every route that fails, prices each one with your own fees and the carry it gives up, and rehearses the legs before you sign: the Solana transactions through real `simulateTransaction` runs, the Hyperliquid order built on the live book. **Nothing is ever signed or sent.**
 
@@ -12,7 +12,7 @@ Phantom put Hyperliquid perps one tap away from Solana spot, so a common positio
 
 ## Try it in three clicks
 
-1. Open https://exitplan-rouge.vercel.app and press **Try on live accounts (read-only)**. It loads two public addresses, lands on a $500 goal and selects the paired trim route. (Or paste your own addresses, or open a deep link such as `#sol=…&hl=…&target=500`.)
+1. Open https://exitplan-rouge.vercel.app and press **Try on live accounts (read-only)**. It probes a short list of public Hyperliquid accounts, loads the first that still holds a SOL short next to a public Kamino wallet, lands on a $500 goal and selects the paired trim route. (Or paste your own addresses, or open a deep link such as `#sol=…&hl=…&target=500`.)
 2. Read the summary strip and the pre-flight line ("5 ok · 1 warning"); press **Show checks** for the reasons. Change the goal or the rules and watch routes pass or fail, each with a sentence that says why.
 3. Press **Step-by-step rehearsal**. The Hyperliquid step walks the live order book and shows the unsigned reduce-only order you would sign; the Kamino and Jupiter steps run real Solana simulations and link each unsigned transaction to Solana Explorer's inspector.
 
@@ -29,7 +29,7 @@ Phantom put Hyperliquid perps one tap away from Solana spot, so a common positio
 | The Hyperliquid leg is built, not imagined | `l2Book` walk: average buy-back price, slippage, levels, book age, cost against the plan, and the inner unsigned reduce-only IOC order (asset index, size, tick-rounded limit capped at the allowance); withheld when the book is stale | rehearsal, step "Reduce SOL short" |
 | The Solana legs really simulate | Kamino's SDK builds the real withdrawal, Jupiter builds the real swap; both run through `simulateTransaction` and report compute units and what would arrive; each has a Solana Explorer inspector link and a copy of the unsigned transaction | rehearsal, steps "Withdraw deposited USDC" and "Sell SOL spot" |
 | Carry is visible | Each route shows the yearly carry it gives up: 7-day average funding on the short reduced plus Kamino supply APY on the deposit withdrawn (shown, not ranked) | route cards, pre-flight check "Carry" |
-| The engine is deterministic and fail-closed | Integer-cent arithmetic, duplicate allocations collapsed, 262 tests including a 650-plan conservation grid and a lot-size property grid | `web/engine.mjs`, `tests/` |
+| The engine is deterministic and fail-closed | Integer-cent arithmetic, duplicate allocations collapsed, 271 tests including a 650-plan conservation grid and a lot-size property grid | `web/engine.mjs`, `tests/` |
 | AI never acts on its own | Plain-English goal → schema-validated constraint proposal → applied only after you confirm | `api/intent.js`, `server/intent.mjs` |
 | It composes | The same adapters, engine and report run from the terminal; the engine and report are dependency-free modules | `bin/exitplan.mjs`, `web/report.mjs` |
 
@@ -52,9 +52,9 @@ Phantom put Hyperliquid perps one tap away from Solana spot, so a common positio
 ```sh
 git clone https://github.com/plutohan/exitplan && cd exitplan
 npm ci --ignore-scripts
-npm test                                                    # 262 tests, no network
+npm test                                                    # 271 tests, no network
 node bin/exitplan.mjs --sol DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK \
-  --hl 0x7b7f72a28fe109fa703eeed7984f2a8a68fedee2 --target 500   # the same report as the site, read-only
+  --hl 0x31dea2516beee92135b96f464eeec3cf292a13f2 --target 500   # the same report as the site, read-only
 ```
 
 Public example accounts (strangers to each other, read-only) and a test matrix of accepted and rejected cases are in `docs/demo-addresses.md`; `docs/verification.md` records what was checked live and when.

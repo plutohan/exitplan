@@ -1,5 +1,6 @@
 import { createDemoPortfolio, defaultConstraints, planExit, requiredMarginCents } from './engine.mjs';
-import { importHyperliquid, estimateLiquidationAfter } from './adapters/hyperliquid.mjs';
+import { importHyperliquid, estimateLiquidationAfter, hasSolShort } from './adapters/hyperliquid.mjs';
+import { pickPublicExample } from './examples.mjs';
 import { importSolana, isSolanaAddress } from './adapters/solana.mjs';
 import { simulateSellSol, simulateKaminoWithdraw, previewReduceShort } from './adapters/rehearsal.mjs';
 import { money, num, planName, stepName, carryText, buildImportedPortfolio, preflightChecks, buildReport as buildReportText, rejectionText as rejectionReasons, initialHlBuffer as hlBufferOf } from './report.mjs';
@@ -973,10 +974,14 @@ $$('input[name="source"]').forEach((radio) =>
   }),
 );
 $('#load-positions').addEventListener('click', loadPositions);
-const EXAMPLE = {
-  solana: 'DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK',
-  hyperliquid: '0x7b7f72a28fe109fa703eeed7984f2a8a68fedee2', // standard account, SOL short among a few positions; a market maker, so resting orders reserve margin the model does not read
-};
+/** Public examples change daily, so probe the list and fill the inputs with the first account that still holds a SOL short. */
+async function useExample() {
+  setImportStatus('Finding a public example that still holds a SOL short…');
+  const pick = await pickPublicExample({ probe: hasSolShort });
+  $('#solana-address').value = pick.solana;
+  $('#hl-address').value = pick.hyperliquid;
+  return pick;
+}
 $('#try-live').addEventListener('click', async () => {
   $('#source-import').checked = true;
   setSource('import');
@@ -984,15 +989,13 @@ $('#try-live').addEventListener('click', async () => {
   $('#target').value = '500';
   $('#target').dispatchEvent(new Event('input', { bubbles: true }));
   $('#target').dispatchEvent(new Event('change', { bubbles: true }));
-  $('#solana-address').value = EXAMPLE.solana;
-  $('#hl-address').value = EXAMPLE.hyperliquid;
+  await useExample();
   await loadPositions();
   if (imported && result?.plans?.some((p) => p.id === 'paired-unwind' && p.feasible)) selectPlan('paired-unwind');
 });
-$('#load-example').addEventListener('click', () => {
+$('#load-example').addEventListener('click', async () => {
   setSource('import');
-  $('#solana-address').value = EXAMPLE.solana;
-  $('#hl-address').value = EXAMPLE.hyperliquid;
+  await useExample();
   loadPositions();
 });
 function detectWallet() {
