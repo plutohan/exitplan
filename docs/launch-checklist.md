@@ -2,7 +2,9 @@
 
 Everything below needs the account owner; the code is complete and frozen unless a review finds a defect.
 
-## 1. Optional, recommended: a real 1:1 hedge for the demo (about $400)
+## 1. Decided: a real 1:1 hedge for the demo (about $400 of mostly recoverable capital)
+
+Both outside reviews (Claude Opus, Codex) reached the same conclusion: the public example is a market maker whose figures move by the hour, whose resting orders leave a seven-figure gap between the model buffer and the exchange's withdrawable, and whose short is not hedged against the example wallet. Your own hedge makes net exposure read 0, the withdrawable match to the cent and the liquidation distance look sane. The cost is fees and funding, not the capital. **Deadline for the fallback decision: 2026-10-13 01:00 UTC+4** (10 hours before the cutoff). If the hedge is not importing cleanly by then, record with the public pair and say "two unrelated public accounts" on camera.
 
 The public example accounts are strangers to each other, so the readout flags "net exposure not neutral" and the "keep SOL fails, trim both legs works" moment needs an odd target. A small hedge of your own makes the story real on screen:
 
@@ -16,12 +18,19 @@ If you skip this, record with the public example (deep links in `docs/demo-addre
 
 ## 2. Videos (both ≤ 3:00)
 
-- Pitch: `docs/pitch-video-script.md`. Say numbers "as of October 12". Do not say "safe", "real-time", "audited" or "independent review".
-- Demo: `docs/demo-video-script.md`. Reload positions right before each take (a snapshot older than five minutes blocks planning on purpose). Walk the readout, one rejection reason, the three-leg rehearsal (book preview with the unsigned order, Kamino simulation, Solana simulation with the Explorer link), the AI prompt with confirmation, "Copy pre-flight report" and the plan link.
+Colosseum's guidance: the pitch video explains the **why**; the technical demo explains the **how** (features, stack, why you prioritised what you did, how Solana is used). Record the 60–90 s proof take first and reuse it in both. Rules: 125–135 words per minute, captions burned in, segments within 3 minutes of a reload, retake anything with a fallback warning or a stale book, no AI in the demo, and never say "safe", "real-time", "audited" or "every leg simulated". After the take, fill `docs/recording-evidence.md`.
+
+- Pitch: `docs/pitch-video-script.md`. Lead with the open-interest number re-pulled on the day; business model with prices; solo/AI framing once.
+- Technical demo: `docs/demo-video-script.md`. Reload positions right before each take (a snapshot older than five minutes blocks planning on purpose). Walk the readout, one rejection reason, the three-leg rehearsal (book preview with the unsigned order, Kamino simulation, Solana simulation with the Explorer link), the AI prompt with confirmation, "Copy pre-flight report" and the plan link.
+
+## 2b. Early validation (an hour, worth doing before the form)
+
+Post the deep link to your own hedge in two or three places where SOL hedgers are (a Phantom Perps or Hyperliquid community channel, your own X account) with one sentence: "read-only, no keys, tell me what it got wrong". Count real runs from Vercel analytics, not memory, and quote the number in the form and the pitch ("N people ran it on their own accounts in the first day"). Even two screenshots of feedback count as the "user feedback" judges ask for.
 
 ## 3. Submission form
 
-- Register the entry and submit `docs/submission-copy.md` field by field (one-liner, description under 1,500 characters, problem, why now, wedge, target user, business model, blockchains integrated, tools, team, disclosure, links).
+- Register the entry and submit `docs/submission-copy.md` field by field (one-liner, description under 1,500 characters, problem, why now, wedge, target user, business model, blockchains integrated, tools, team, disclosure, links). Fill every optional field. Lead with the Hyperliquid track in the one-liner's first clause (the account-mode check, transfer-rule margin, lot and fee sizing, and the live-book order are the unusual work); tick both tracks.
+- Access: the repo is public; upload the videos as unlisted links that open without login and test them in a private window.
 - Select **both** Solana and Hyperliquid as integrated chains.
 - Attach the two videos. Repository: https://github.com/plutohan/exitplan. Live: https://exitplan-rouge.vercel.app.
 

@@ -1277,3 +1277,13 @@ test('summary tiles stay readable with whale-sized numbers and the loaded status
   await ui.click('#source-change');
   assert.equal(ui.get('#import-status').hasAttribute('hidden'), false);
 });
+
+test('the result banner describes the selected route when it is not the lowest-fee candidate', async t => {
+  const ui = await mount(t, { externalResponse: external() });
+  await importPositions(ui);
+  await ui.input('#target', 500);
+  assert.match(ui.get('#result-banner').textContent, /lowest upfront fees/);
+  await ui.click('[data-plan="paired-unwind"]');
+  assert.match(ui.get('#result-banner').textContent, /Selected: .*Trim spot and short together/);
+  assert.match(ui.get('#result-banner').textContent, /lowest upfront fees: .*Withdraw Solana deposit USDC/);
+});

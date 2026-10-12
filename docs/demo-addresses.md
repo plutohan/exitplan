@@ -8,7 +8,7 @@ ExitPlan verifies the account mode with `userAbstraction`. Standard (`disabled` 
 
 | Address | Mode on 2026-10-11 | SOL short | Leverage | Account value | Withdrawable | Other positions |
 | --- | --- | ---: | ---: | ---: | ---: | --- |
-| `0x7b7f72a28fe109fa703eeed7984f2a8a68fedee2` | `disabled` (standard) — use this | ~368 | 10x | ~$2.2M | ~$1.0M (exchange) | BTC, ETH, XRP, HYPE; a market maker with ~1,400 resting orders, so the exchange's withdrawable sits below the model buffer and the readout says so. Replaced `0x4bdf…2f37` on 2026-10-12 after that account closed its SOL short. |
+| `0x7b7f72a28fe109fa703eeed7984f2a8a68fedee2` | `disabled` (standard) — use this | changes daily (tens to hundreds) | 10x | ~$2M | far below the model buffer | BTC, ETH, XRP, HYPE; an active market maker with ~1,400 resting orders, so its figures move by the hour and the exchange's withdrawable sits far below the model buffer (the readout says why). Replaced `0x4bdf…2f37` on 2026-10-12 after that account closed its SOL short. For a demo, your own 1:1 hedge is far better: see `docs/launch-checklist.md`. |
 | `0x3de9a354243a94e10060a198c7179b8e5393b9a1` | `portfolioMargin` — rejected | 700 | 5x | ~$47k | $0 | ETH, ENA, HYPE, ZEC |
 | `0xfa1413451bc8dd3484787eb3c3156a7e28c4aade` | `portfolioMargin` — rejected | 3,170 | 20x | ~$91k | $0 | HYPE |
 
@@ -34,7 +34,7 @@ Paste any of these, or open the deep links on the live site. None of them is our
 
 | Solana wallet | Hyperliquid address | What the app shows | Deep link |
 | --- | --- | --- | --- |
-| `DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK` | `0x7b7f72a28fe109fa703eeed7984f2a8a68fedee2` | Imports: 3.22 SOL, $336 wallet USDC, $9.6k Kamino, ~368 SOL short (standard, verified), liquidation card, routes incl. wallet-USDC-first and paired trim; both Solana simulations work | [open](https://exitplan-rouge.vercel.app/#sol=DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK&hl=0x7b7f72a28fe109fa703eeed7984f2a8a68fedee2&target=500) |
+| `DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK` | `0x7b7f72a28fe109fa703eeed7984f2a8a68fedee2` | Imports: 3.22 SOL, $336 wallet USDC, $9.6k Kamino, a SOL short that changes daily (standard, verified), liquidation card, routes incl. wallet-USDC-first and paired trim; both Solana simulations work | [open](https://exitplan-rouge.vercel.app/#sol=DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK&hl=0x7b7f72a28fe109fa703eeed7984f2a8a68fedee2&target=500) |
 | `2g2xzcMiTGysNZzv9zZcDqx7MtdRxWG1VHMVPDw3qdW9` | `0x7b7f72a28fe109fa703eeed7984f2a8a68fedee2` | Imports: 0.5 SOL, no wallet USDC, $26.6k Kamino; Kamino withdrawal is the best route | [open](https://exitplan-rouge.vercel.app/#sol=2g2xzcMiTGysNZzv9zZcDqx7MtdRxWG1VHMVPDw3qdW9&hl=0x7b7f72a28fe109fa703eeed7984f2a8a68fedee2&target=2000) |
 | `GpSfiLicGjMHt7bsjn4qszXm37taAbUjxHfvd7wUpJim` | `0x7b7f72a28fe109fa703eeed7984f2a8a68fedee2` | Imports: 0.18 SOL, $7.0k Kamino | [open](https://exitplan-rouge.vercel.app/#sol=GpSfiLicGjMHt7bsjn4qszXm37taAbUjxHfvd7wUpJim&hl=0x7b7f72a28fe109fa703eeed7984f2a8a68fedee2&target=1000) |
 | `73vjancZxVR6QNWujzJCUzjeHZJSCBgvZe6CpMUWZALD` | `0x7b7f72a28fe109fa703eeed7984f2a8a68fedee2` | Imports: $583k Kamino USDC; large targets show the Kamino liquidity cap in the evidence dialog | [open](https://exitplan-rouge.vercel.app/#sol=73vjancZxVR6QNWujzJCUzjeHZJSCBgvZe6CpMUWZALD&hl=0x7b7f72a28fe109fa703eeed7984f2a8a68fedee2&target=10000) |

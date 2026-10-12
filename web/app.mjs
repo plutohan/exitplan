@@ -169,7 +169,8 @@ function renderPlans() {
   } else if (result.errors.length) {
     banner.innerHTML = `<span>${icon('warning')}</span><div><strong>Check your inputs</strong><p>Enter the cash target and margin buffer as numbers of 0 or more</p></div>`;
   } else if (result.best) {
-    banner.innerHTML = `<span>${icon('check')}</span><div><strong>There is a route for the ${money(constraints.target)} target</strong><p>Showing the evaluated candidate with the lowest upfront fees · not verified for execution</p></div>`;
+    const chosen = selectedId && selectedId !== result.best.id ? result.plans.find((p) => p.id === selectedId && p.feasible) : null;
+    banner.innerHTML = `<span>${icon('check')}</span><div><strong>There is a route for the ${money(constraints.target)} target</strong><p>${chosen ? `Selected: ${esc(planName(chosen))} · lowest upfront fees: ${esc(planName(result.best))} (${money(result.best.fees, true)}) · not verified for execution` : 'Showing the evaluated candidate with the lowest upfront fees · not verified for execution'}</p></div>`;
   } else {
     banner.innerHTML = `<span>${icon('warning')}</span><div><strong>No route satisfies the current conditions</strong><p>Keeping SOL and short quantities with no new debt yields up to ${money(result.maximumWithoutSelling)}. Adjust the target or constraints and compare again.</p>${renderSuggestions()}</div>`;
     $$('[data-suggestion]').forEach((b) =>
