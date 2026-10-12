@@ -63,89 +63,85 @@ When execution ships, a few basis points of Hyperliquid builder fee on the short
 ten thousand dollars at five basis points is five dollars, so that is a floor, not the plan.
 
 17
-00:00:58,571 --> 00:00:59,950
-I run this hedge myself
-
-18
 00:01:00,000 --> 00:01:01,807
 You give it a cash goal and the rules you refuse to break;
 
-19
+18
 00:01:01,857 --> 00:01:04,950
 it shows every route that keeps them, explains every route that doesn't, and rehearses the legs on both chains before you sign.
 
-20
+19
 00:01:55,000 --> 00:01:58,950
 I'm a Solana tooling contributor and I hold this hedge myself.
 
-21
+20
 00:01:59,000 --> 00:02:01,859
 I built ExitPlan solo with AI coding agents:
 
-22
+21
 00:02:01,909 --> 00:02:08,041
 my part was the spec, checking the margin math against the live exchange, and the 262 tests.
 
-23
+22
 00:02:08,091 --> 00:02:10,586
 The hard part was not the UI;
 
-24
+23
 00:02:10,636 --> 00:02:14,950
 it was making the margin model match the exchange on real accounts.
 
-25
+24
 00:02:15,000 --> 00:02:17,575
 Next is execution behind the same check:
 
-26
+25
 00:02:17,625 --> 00:02:23,950
 Phantom signs the Solana legs, a Hyperliquid builder code routes the short, CCTP brings the USDC home.
 
-27
+26
 00:02:24,000 --> 00:02:28,825
 Everything is MIT, and the route engine is a module anyone can import.
 
-28
+27
 00:02:35,000 --> 00:02:35,888
 What's real today:
 
-29
+28
 00:02:35,938 --> 00:02:38,388
 my own hedge, read live from both chains;
 
-30
+29
 00:02:38,438 --> 00:02:40,575
 margin math that matched Hyperliquid's own withdrawable;
 
-31
+30
 00:02:40,625 --> 00:02:43,700
 a Kamino withdrawal and a Jupiter swap simulated on Solana;
 
-32
+31
 00:02:43,750 --> 00:02:46,200
 the Hyperliquid order built on the live book.
 
-33
+32
 00:02:46,250 --> 00:02:47,450
 Nothing signed, nothing sent.
 
-34
+33
 00:02:47,500 --> 00:02:48,100
 ExitPlan:
 
-35
+34
 00:02:47,812 --> 00:02:49,950
 try it read-only on your own accounts.
 
-36
+35
 00:02:50,000 --> 00:02:51,825
 only if the take shows it.
 
-37
+36
 00:02:51,875 --> 00:02:54,012
 Never say the Hyperliquid withdrawal was simulated.
 
-38
+37
 00:02:54,062 --> 00:02:54,950
 Do not say
