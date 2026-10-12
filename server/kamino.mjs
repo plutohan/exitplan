@@ -38,6 +38,23 @@ function loadSdk() {
   return sdkPromise;
 }
 
+
+/** The ledger instant (slot + block time) only feeds staleness checks inside the SDK, so a block a minute old or the wall clock is good enough when the RPC has not indexed the latest blocks yet (-32004). */
+async function ledgerInstantWithRetry(lib, rpc, slot, now) {
+  const back = (n) => (typeof slot === 'bigint' ? slot - BigInt(n) : slot - n);
+  let lastError;
+  for (const offset of [0, 32, 150, 600]) {
+    try {
+      return await lib.resolveLedgerInstantForSlot(rpc, back(offset), 'exitplan');
+    } catch (error) {
+      lastError = error;
+      const text = `${error?.message || ''} ${error?.context?.__code ?? ''}`;
+      if (!/-32004|not available for slot/i.test(text)) throw error;
+    }
+  }
+  console.warn('kamino ledger instant fell back to the wall clock', String(lastError?.message || '').slice(0, 80));
+  return { slot: back(150), blockTime: BigInt(Math.floor(now() / 1000)) };
+}
 export async function simulateKaminoWithdraw(body, { sdk, loadSdkImpl = loadSdk, rpcUrl = process.env.SOLANA_RPC_URL || DEFAULT_RPC_URL, now = Date.now } = {}) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return { status: 400, body: { error: 'Request must be a JSON object with wallet and amountUsdc' } };
   const { wallet, amountUsdc } = body;
@@ -64,15 +81,7 @@ export async function simulateKaminoWithdraw(body, { sdk, loadSdkImpl = loadSdk,
     if (!obligation) return { status: 404, body: { error: 'No Kamino obligation found for this wallet in the main market', ok: false } };
     // A finalized slot is one every node already holds; a processed slot can be ahead of the RPC's block store (-32004 "Block not available").
     const slot = await rpc.getSlot({ commitment: 'finalized' }).send();
-    let ledger;
-    try {
-      ledger = await lib.resolveLedgerInstantForSlot(rpc, slot, 'exitplan');
-    } catch (error) {
-      const text = `${error?.message || ''} ${error?.context?.__code ?? ''}`;
-      if (!/-32004|not available for slot/i.test(text)) throw error;
-      const older = typeof slot === 'bigint' ? slot - 32n : slot - 32; // one retry, a few seconds back
-      ledger = await lib.resolveLedgerInstantForSlot(rpc, older, 'exitplan');
-    }
+    const ledger = await ledgerInstantWithRetry(lib, rpc, slot, now);
     const action = await lib.KaminoAction.buildWithdrawTxns({
       kaminoMarket: market,
       amount: baseUnits,

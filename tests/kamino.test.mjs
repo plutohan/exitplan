@@ -120,3 +120,20 @@ test('a slot whose block the RPC does not have yet is retried on an older slot i
   assert.equal(ledgerSlots.length, 2);
   assert.ok(ledgerSlots[1] < ledgerSlots[0], 'the retry uses an older slot');
 });
+
+test('when no nearby block is available at all, the simulation still runs on a wall-clock ledger instant', async () => {
+  const sdk = fakeSdk();
+  const ledgerSlots = [];
+  sdk.resolveLedgerInstantForSlot = async (_rpc, slot) => { ledgerSlots.push(slot); const error = new Error('Solana error #-32004'); error.context = { __code: -32004 }; throw error; };
+  const result = await simulateKaminoWithdraw({ wallet: 'DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK', amountUsdc: 74.99 }, { sdk, now: () => 1_791_828_010_000 });
+  assert.equal(result.status, 200, JSON.stringify(result.body));
+  assert.equal(result.body.ok, true);
+  assert.equal(ledgerSlots.length, 4, 'four slots are tried before the fallback');
+});
+
+test('a non-RPC error from the ledger lookup is still reported as an outage', async () => {
+  const sdk = fakeSdk();
+  sdk.resolveLedgerInstantForSlot = async () => { throw new Error('boom'); };
+  const result = await simulateKaminoWithdraw({ wallet: 'DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK', amountUsdc: 74.99 }, { sdk });
+  assert.equal(result.status, 502);
+});
