@@ -1,7 +1,7 @@
 import { createDemoPortfolio, defaultConstraints, planExit, requiredMarginCents } from './engine.mjs';
 import { importHyperliquid, estimateLiquidationAfter, hasSolShort } from './adapters/hyperliquid.mjs';
 import { pickPublicExample } from './examples.mjs';
-import { importSolana, isSolanaAddress } from './adapters/solana.mjs';
+import { importSolana, isSolanaAddress, hasKaminoUsdcAndSol } from './adapters/solana.mjs';
 import { simulateSellSol, simulateKaminoWithdraw, previewReduceShort } from './adapters/rehearsal.mjs';
 import { money, num, planName, stepName, carryText, buildImportedPortfolio, preflightChecks, buildReport as buildReportText, rejectionText as rejectionReasons, initialHlBuffer as hlBufferOf } from './report.mjs';
 
@@ -984,8 +984,8 @@ $$('input[name="source"]').forEach((radio) =>
 $('#load-positions').addEventListener('click', loadPositions);
 /** Public examples change daily, so probe the list and fill the inputs with the first account that still holds a SOL short. */
 async function useExample() {
-  setImportStatus('Finding a public example that still holds a SOL short…');
-  const pick = await pickPublicExample({ probe: hasSolShort });
+  setImportStatus('Finding public example accounts that still fit: a SOL short on Hyperliquid, SOL plus a Kamino USDC deposit on Solana…');
+  const pick = await pickPublicExample({ probeSolana: hasKaminoUsdcAndSol, probeHyperliquid: hasSolShort });
   $('#solana-address').value = pick.solana;
   $('#hl-address').value = pick.hyperliquid;
   return pick;

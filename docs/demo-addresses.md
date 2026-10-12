@@ -23,7 +23,7 @@ The best demo is your own small 1:1 hedge (SOL in Phantom, an equal SOL short in
 
 | Wallet | USDC supplied | SOL balance |
 | --- | ---: | ---: |
-| `DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK` | ~$9.6k | 3.22 |
+| `DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK` | ~$9.6k | 3.22 | ← first candidate; the hero button probes these three in order (`web/examples.mjs`: some SOL plus a USDC-only, borrow-free Kamino deposit)
 | `2g2xzcMiTGysNZzv9zZcDqx7MtdRxWG1VHMVPDw3qdW9` | ~$26.6k | 0.50 |
 | `GpSfiLicGjMHt7bsjn4qszXm37taAbUjxHfvd7wUpJim` | ~$7.0k | 0.18 |
 

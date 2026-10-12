@@ -1,6 +1,6 @@
 # ExitPlan — the pre-flight check before you unwind a Solana–Hyperliquid hedge
 
-**Live:** https://exitplan-rouge.vercel.app · **Hackathon:** Colosseum Crypto World's Fair 2026, Solana and Hyperliquid tracks · **License:** MIT · **Tests:** 273 (`npm test`)
+**Live:** https://exitplan-rouge.vercel.app · **Hackathon:** Colosseum Crypto World's Fair 2026, Solana and Hyperliquid tracks · **License:** MIT · **Tests:** 276 (`npm test`) [![tests](https://github.com/plutohan/exitplan/actions/workflows/test.yml/badge.svg)](https://github.com/plutohan/exitplan/actions/workflows/test.yml)
 
 Give ExitPlan two addresses (a Solana wallet, a Hyperliquid account), a cash goal and the limits you refuse to break. It reads both chains, finds every route that keeps your exposure, margin and debt rules, explains every route that fails, prices each one with your own fees and the carry it gives up, and rehearses the legs before you sign: the Solana transactions through real `simulateTransaction` runs, the Hyperliquid order built on the live book. **Nothing is ever signed or sent.**
 
@@ -29,7 +29,7 @@ Phantom put Hyperliquid perps one tap away from Solana spot, so a common positio
 | The Hyperliquid leg is built, not imagined | `l2Book` walk: average buy-back price, slippage, levels, book age, cost against the plan, and the inner unsigned reduce-only IOC order (asset index, size, tick-rounded limit capped at the allowance); withheld when the book is stale | rehearsal, step "Reduce SOL short" |
 | The Solana legs really simulate | Kamino's SDK builds the real withdrawal, Jupiter builds the real swap; both run through `simulateTransaction` and report compute units and what would arrive; each has a Solana Explorer inspector link and a copy of the unsigned transaction | rehearsal, steps "Withdraw deposited USDC" and "Sell SOL spot" |
 | Carry is visible | Each route shows the yearly carry it gives up: 7-day average funding on the short reduced plus Kamino supply APY on the deposit withdrawn (shown, not ranked) | route cards, pre-flight check "Carry" |
-| The engine is deterministic and fail-closed | Integer-cent arithmetic, duplicate allocations collapsed, 273 tests including a 650-plan conservation grid and a lot-size property grid | `web/engine.mjs`, `tests/` |
+| The engine is deterministic and fail-closed | Integer-cent arithmetic, duplicate allocations collapsed, 276 tests including a 650-plan conservation grid and a lot-size property grid | `web/engine.mjs`, `tests/` |
 | AI never acts on its own | Plain-English goal → schema-validated constraint proposal → applied only after you confirm | `api/intent.js`, `server/intent.mjs` |
 | It composes | The same adapters, engine and report run from the terminal; the engine and report are dependency-free modules | `bin/exitplan.mjs`, `web/report.mjs` |
 
@@ -52,7 +52,7 @@ Phantom put Hyperliquid perps one tap away from Solana spot, so a common positio
 ```sh
 git clone https://github.com/plutohan/exitplan && cd exitplan
 npm ci --ignore-scripts
-npm test                                                    # 273 tests, no network
+npm test                                                    # 276 tests, no network
 node bin/exitplan.mjs --sol DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK \
   --hl 0x31dea2516beee92135b96f464eeec3cf292a13f2 --target 500   # the same report as the site, read-only
 ```

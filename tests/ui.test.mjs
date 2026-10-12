@@ -1300,7 +1300,7 @@ test('the hero button skips a public example that no longer holds a SOL short an
     const target = new URL(call.url);
     if (target.host === 'api.hyperliquid.xyz') {
       const body = JSON.parse(call.body);
-      if (body.type === 'clearinghouseState') { probed.push(body.user); return json(body.user === PUBLIC_EXAMPLES[0].hyperliquid ? long : hlShort); }
+      if (body.type === 'clearinghouseState') { probed.push(body.user); return json(body.user === PUBLIC_EXAMPLES.hyperliquid[0] ? long : hlShort); }
     }
     return fallback(call);
   };
@@ -1308,8 +1308,8 @@ test('the hero button skips a public example that no longer holds a SOL short an
   await ui.click('#try-live');
   for (let i = 0; i < 80 && !/Loaded|Could not/.test(ui.get('#import-status').textContent); i++) await flush();
   assert.match(ui.get('#import-status').textContent, /Loaded/);
-  assert.equal(ui.get('#hl-address').value, PUBLIC_EXAMPLES[1].hyperliquid);
-  assert.equal(probed[0], PUBLIC_EXAMPLES[0].hyperliquid);
+  assert.equal(ui.get('#hl-address').value, PUBLIC_EXAMPLES.hyperliquid[1]);
+  assert.equal(probed[0], PUBLIC_EXAMPLES.hyperliquid[0]);
   assert.equal(ui.get('.plan-card.selected').dataset.plan, 'paired-unwind');
 });
 

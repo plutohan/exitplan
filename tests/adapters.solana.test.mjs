@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { importSolana, isSolanaAddress, solSaleBpsFromQuote, AdapterError, KAMINO_MAIN_MARKET, USDC_RESERVE, SOL_RESERVE } from '../web/adapters/solana.mjs';
+import { importSolana, hasKaminoUsdcAndSol, isSolanaAddress, solSaleBpsFromQuote, AdapterError, KAMINO_MAIN_MARKET, USDC_RESERVE, SOL_RESERVE } from '../web/adapters/solana.mjs';
 import { planExit, defaultConstraints, createDemoPortfolio } from '../web/engine.mjs';
 
 const fixture = async name => JSON.parse(await readFile(new URL(`./fixtures/${name}.json`, import.meta.url), 'utf8'));
@@ -171,4 +171,34 @@ test('when the Jupiter swap quote is down, the planning price falls back to Jupi
   assert.ok(result.assumptions.some(line => /swap quote unavailable/i.test(line) && /50 bps/.test(line)), result.assumptions.join(' | '));
   const bothDown = async (url, init) => { const target = new URL(url); if (target.host === 'lite-api.jup.ag' && target.pathname !== '/ultra/v1/balances/' + WALLET && !target.pathname.startsWith('/ultra/')) return new Response('down', { status: 503 }); return base(url, init); };
   await assert.rejects(importSolana(WALLET, { fetchImpl: bothDown, retryDelayMs: 1 }), e => e.code === 'HTTP_ERROR');
+});
+
+const probeFetch = ({ lamports = 3_219_600_000, obligations }) => async (url, init = {}) => {
+  const target = new URL(url);
+  if (target.origin === 'https://solana-rpc.publicnode.com') return Response.json({ jsonrpc: '2.0', id: 1, result: { context: { slot: 1 }, value: lamports } });
+  if (target.host === 'api.kamino.finance' && target.pathname.endsWith('/obligations')) return Response.json(obligations);
+  assert.fail('the probe must only read the balance and the obligations: ' + url);
+};
+
+test('hasKaminoUsdcAndSol is true for a wallet with SOL and a USDC-only Kamino deposit, using two reads', async () => {
+  const obligations = await fixture('kamino-obligations');
+  assert.equal(await hasKaminoUsdcAndSol(WALLET, { fetchImpl: probeFetch({ obligations }) }), true);
+});
+
+test('hasKaminoUsdcAndSol is false without SOL, without a deposit, with a borrow or with a non-USDC deposit', async () => {
+  const obligations = await fixture('kamino-obligations');
+  assert.equal(await hasKaminoUsdcAndSol(WALLET, { fetchImpl: probeFetch({ obligations, lamports: 1_000_000 }) }), false);
+  assert.equal(await hasKaminoUsdcAndSol(WALLET, { fetchImpl: probeFetch({ obligations: [] }) }), false);
+  const borrowed = structuredClone(obligations);
+  borrowed[0].state.borrows[0] = { borrowReserve: 'd4A2prbA2whesmvHaL88BH6Ewn5N4bTSU2Ze8P6Bc4Q' };
+  borrowed[0].refreshedStats.userTotalBorrow = '12.5';
+  assert.equal(await hasKaminoUsdcAndSol(WALLET, { fetchImpl: probeFetch({ obligations: borrowed }) }), false);
+  const mixed = structuredClone(obligations);
+  mixed[0].state.deposits[1] = { depositReserve: SOL_RESERVE };
+  assert.equal(await hasKaminoUsdcAndSol(WALLET, { fetchImpl: probeFetch({ obligations: mixed }) }), false);
+});
+
+test('hasKaminoUsdcAndSol rejects an invalid address and propagates transport failures', async () => {
+  await assert.rejects(hasKaminoUsdcAndSol('nope', { fetchImpl: probeFetch({ obligations: [] }) }), e => e instanceof AdapterError && e.code === 'INVALID_ADDRESS');
+  await assert.rejects(hasKaminoUsdcAndSol(WALLET, { fetchImpl: async () => new Response('down', { status: 404 }) }), e => e instanceof AdapterError);
 });

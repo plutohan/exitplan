@@ -56,6 +56,26 @@ async function quoteOrPrice(lamports, options) {
   }
 }
 
+/** Two reads (balance, Kamino obligations): does this wallet still hold some SOL plus a USDC-only, borrow-free Kamino deposit? Used to pick a public example; never used for planning. */
+export async function hasKaminoUsdcAndSol(address, { fetchImpl = globalThis.fetch, timeoutMs = 8000 } = {}) {
+  if (!isSolanaAddress(address)) throw new AdapterError('INVALID_ADDRESS', 'Enter a Solana wallet address (base58, 32–44 characters)');
+  const options = { fetchImpl, timeoutMs };
+  const [balance, obligations] = await Promise.all([
+    rpc('getBalance', [address], options),
+    requestJson(`${KAMINO_API_URL}/kamino-market/${KAMINO_MAIN_MARKET}/users/${address}/obligations`, options),
+  ]);
+  const lamports = Number(balance?.value);
+  if (!Number.isFinite(lamports) || lamports < 0.05 * LAMPORTS_PER_SOL) return false;
+  if (!Array.isArray(obligations)) return false;
+  return obligations.some((obligation) => {
+    if (!obligation || !(obligation.obligationTag === 0 || obligation.humanTag === 'Vanilla')) return false;
+    const deposits = (obligation.state?.deposits ?? []).filter((entry) => entry && entry.depositReserve !== EMPTY_RESERVE);
+    const borrows = (obligation.state?.borrows ?? []).filter((entry) => entry && entry.borrowReserve !== EMPTY_RESERVE);
+    const totalDeposit = Number(obligation.refreshedStats?.userTotalDeposit ?? 0), totalBorrow = Number(obligation.refreshedStats?.userTotalBorrow ?? 0);
+    return deposits.length > 0 && deposits.every((entry) => entry.depositReserve === USDC_RESERVE) && borrows.length === 0 && totalBorrow === 0 && totalDeposit > 0;
+  });
+}
+
 export async function importSolana(address, { fetchImpl = globalThis.fetch, now = Date.now, timeoutMs = 8000 } = {}) {
   if (!isSolanaAddress(address)) throw new AdapterError('INVALID_ADDRESS', 'Enter a Solana wallet address (base58, 32–44 characters)');
   const options = { fetchImpl, timeoutMs };

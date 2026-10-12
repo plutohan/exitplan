@@ -2,28 +2,35 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PUBLIC_EXAMPLES, pickPublicExample } from '../web/examples.mjs';
 
-test('the public example list carries valid addresses and at least two Hyperliquid candidates in order', () => {
-  assert.ok(PUBLIC_EXAMPLES.length >= 2);
-  for (const c of PUBLIC_EXAMPLES) {
-    assert.match(c.hyperliquid, /^0x[0-9a-f]{40}$/);
-    assert.match(c.solana, /^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
-  }
-  assert.equal(new Set(PUBLIC_EXAMPLES.map(c => c.hyperliquid)).size, PUBLIC_EXAMPLES.length);
+test('the public example lists carry valid, distinct addresses with at least two candidates per chain', () => {
+  assert.ok(PUBLIC_EXAMPLES.solana.length >= 2 && PUBLIC_EXAMPLES.hyperliquid.length >= 2);
+  for (const a of PUBLIC_EXAMPLES.hyperliquid) assert.match(a, /^0x[0-9a-f]{40}$/);
+  for (const a of PUBLIC_EXAMPLES.solana) assert.match(a, /^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
+  assert.equal(new Set(PUBLIC_EXAMPLES.hyperliquid).size, PUBLIC_EXAMPLES.hyperliquid.length);
+  assert.equal(new Set(PUBLIC_EXAMPLES.solana).size, PUBLIC_EXAMPLES.solana.length);
 });
 
-test('picks the first candidate whose probe reports a SOL short and stops probing there', async () => {
-  const probed = [];
-  const probe = async hl => { probed.push(hl); return hl === PUBLIC_EXAMPLES[1].hyperliquid; };
-  const pick = await pickPublicExample({ probe });
-  assert.equal(pick.hyperliquid, PUBLIC_EXAMPLES[1].hyperliquid);
-  assert.deepEqual(probed, PUBLIC_EXAMPLES.slice(0, 2).map(c => c.hyperliquid));
+test('picks, per chain, the first candidate whose probe passes and stops probing there', async () => {
+  const probed = { solana: [], hyperliquid: [] };
+  const pick = await pickPublicExample({
+    probeSolana: async a => { probed.solana.push(a); return a === PUBLIC_EXAMPLES.solana[0]; },
+    probeHyperliquid: async a => { probed.hyperliquid.push(a); return a === PUBLIC_EXAMPLES.hyperliquid[1]; },
+  });
+  assert.deepEqual(pick, { solana: PUBLIC_EXAMPLES.solana[0], hyperliquid: PUBLIC_EXAMPLES.hyperliquid[1] });
+  assert.deepEqual(probed.solana, PUBLIC_EXAMPLES.solana.slice(0, 1));
+  assert.deepEqual(probed.hyperliquid, PUBLIC_EXAMPLES.hyperliquid.slice(0, 2));
 });
 
 test('a probe that throws skips that candidate instead of failing the pick', async () => {
-  const probe = async hl => { if (hl === PUBLIC_EXAMPLES[0].hyperliquid) throw new Error('network'); return true; };
-  assert.equal((await pickPublicExample({ probe })).hyperliquid, PUBLIC_EXAMPLES[1].hyperliquid);
+  const pick = await pickPublicExample({
+    probeSolana: async a => { if (a === PUBLIC_EXAMPLES.solana[0]) throw new Error('network'); return true; },
+    probeHyperliquid: async () => true,
+  });
+  assert.equal(pick.solana, PUBLIC_EXAMPLES.solana[1]);
+  assert.equal(pick.hyperliquid, PUBLIC_EXAMPLES.hyperliquid[0]);
 });
 
-test('falls back to the first candidate when no probe succeeds, so the import shows the real reason', async () => {
-  assert.equal((await pickPublicExample({ probe: async () => false })).hyperliquid, PUBLIC_EXAMPLES[0].hyperliquid);
+test('falls back to the first candidate of each chain when no probe passes, so the import shows the real reason', async () => {
+  const pick = await pickPublicExample({ probeSolana: async () => false, probeHyperliquid: async () => false });
+  assert.deepEqual(pick, { solana: PUBLIC_EXAMPLES.solana[0], hyperliquid: PUBLIC_EXAMPLES.hyperliquid[0] });
 });
