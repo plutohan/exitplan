@@ -1,34 +1,34 @@
-# Pitch video script (2:30 target, 3:00 hard limit)
+# Pitch video script (2:50 target, 3:00 hard limit)
 
-Record with Loom or screen + webcam. Hook first, bio second. Show the live site from 1:00. Say every number as "as of October 12".
+Evidence from 20 Colosseum winner videos and 337 winners: winners use nearly the full three minutes (median 175 s), speak at about 165 words per minute, say their name within the first 10 seconds (9 of 13), state a fee or business model by about 0:55 (11 of 13), and close on what is real and deployed, not on a slogan (8 of 13). Solo winners are common (82 of 337). Record with Loom or screen + webcam; narrative matters more than editing. About 155–165 words per minute, at most 440 spoken words. Say every number as "as of today".
 
-**0:00 – 0:20 · Hook** *(Phantom showing a SOL balance and a SOL short in Perps)*
-"Long SOL in Phantom, short SOL on Hyperliquid: a hedge that has paid shorts about 9% a year in funding. Tonight you need $5,000." *(0:08)* "Pull margin and your liquidation price drops. Sell SOL and you're net short. Kamino's USDC pool is 93% lent out." *(0:14, ExitPlan loading both chains)* "ExitPlan is the pre-flight check: both chains, your rules, your fees, and every leg rehearsed read-only before you sign: two Solana simulations and the Hyperliquid order built on the live book."
+**0:00 – 0:20 · Opening** *(your own Phantom showing the SOL balance, then the Hyperliquid position)*
+"I'm long SOL in my Solana wallet and short SOL on Hyperliquid. Tonight I need three hundred dollars out. Pull margin and my short moves toward liquidation; sell SOL and I'm net short. I'm Pluto, I build Solana developer tooling, and I built ExitPlan alone: the pre-flight check before you unwind." (53 words)
 
-**0:20 – 0:30 · Who**
-"I'm Pluto. I contribute to Solana developer tooling, and I built this alone during the hackathon."
+**0:20 – 0:40 · Problem and why now**
+"Phantom put Hyperliquid perps one tap from Solana spot. As of today about $__M of SOL is shorted on Hyperliquid, earning shorts about 9% a year, and most of it sits opposite SOL held on Solana. Opening the hedge is one tap. Unwinding it is three apps and a guess: sell SOL and you're net short, pull margin and your liquidation price drops, and Kamino's USDC pool is 93% lent out."
+Re-pull the open-interest number on the day you record (Hyperliquid `metaAndAssetCtxs`, SOL `openInterest` × mark; it was about $668M on 2026-10-12).
 
-**0:30 – 0:55 · Problem and why now**
-"Phantom put Hyperliquid perps inside a Solana wallet, so this position is now mainstream: SOL and USDC, often in Kamino, on Solana; a Hyperliquid short on the other side. The state lives in three apps, so people unwind by feel, in the wrong order. Hyperliquid's SOL perp carries about 5.7 million SOL of open interest, Unified accounts now let one spot balance back every perp, and Circle's CCTP sends USDC from HyperCore straight to a Solana token account. Opening the hedge is one tap. Unwinding it is still three apps and a guess."
+**0:40 – 1:00 · Business and validation** (winners say the fee by about 0:55)
+"The planner is free. The watch tier is ten dollars a month: a standing pre-flight that alerts when the plan breaks, funding flips or liquidation gets close. When execution ships, a few basis points of Hyperliquid builder fee on the short leg plus a Jupiter platform fee; ten thousand dollars at five basis points is five dollars, so that is a floor, not the plan."
+Then one validation fact, said as fact: the Vercel run count ("N people ran it on their own accounts in the first day") or one feedback screenshot. With zero runs, say "I run this hedge myself" and claim nothing else.
 
-**0:55 – 1:05 · What it does** (one sentence; the demo footage shows the rest)
+**1:00 – 1:05 · What it does** (one sentence; the footage shows the rest)
 "You give it a cash goal and the rules you refuse to break; it shows every route that keeps them, explains every route that doesn't, and rehearses the legs on both chains before you sign."
 
-**1:10 – 2:00 · Demo clip** (from the demo video)
-- Two addresses, or a read-only wallet connect → the pre-flight readout: "account mode verified", net exposure, liquidation distance, margin buffer against your floor next to the exchange's own withdrawable, Kamino pool cash, wallet USDC, carry.
-- Keep-SOL with no debt: no route. "What would make it work" → trim both legs → a route appears, net exposure unchanged, "carry given up $14 a year" on the card.
-- One rejection reason read aloud.
-- Rehearsal, three legs: the Hyperliquid step walks the live order book and shows the exact unsigned reduce-only order you would sign, with the cost against the plan. The Kamino step: "Kamino's SDK built the real withdrawal, Solana simulated it, and it would deliver exactly the planned USDC." The sell step: "Jupiter built the exact swap; it succeeds within a fraction of a percent of the plan. Nothing was signed or sent."
-- Margin math: "On live Standard and Unified accounts the model's withdrawable matches Hyperliquid's own number within a dollar, to the cent on the standard example."
-- Copy the pre-flight report; AI prompt for ten seconds, confirmed before anything applies.
+**1:05 – 1:55 · Product clip** (the proof take from the technical demo, cut to 50 s)
+- Readout on your own hedge: net exposure 0, account mode verified, HL withdrawable next to the model buffer.
+- Keep-SOL on: "no route"; read one rejection sentence. Allow selling SOL: the paired route appears, net exposure still 0, liquidation before and after, "carry given up".
+- Rehearsal: Hyperliquid book walk and the unsigned reduce-only order ("built, never sent"); Kamino "would deliver $X, plan $X"; Jupiter simulation passes, Explorer inspector opens.
 
-**2:00 – 2:30 · Market and business** (prices and a test for each stage)
-"Who: funding farmers running a SOL delta-neutral book across Phantom and Hyperliquid, roughly $5k to $500k each. The planner is free. Stage one, a watch tier at $10 a month: a standing pre-flight that alerts when the plan breaks, funding flips or liquidation gets close; the recurring need is the watch, not the unwind. Stage two, the same check embedded in wallets and front-ends that already earn builder fees, on a revenue share. Stage three, execution: a Hyperliquid builder fee of a few basis points on the short leg plus a Jupiter platform fee; a $10k unwind at 5 bps is $5, a thousand a month is $5k, so treat it as a floor. Thirty-day test: twenty watch-tier sign-ups and one wallet conversation." If people ran the tool on their own accounts before you record, say the number here ("N people ran it on their own accounts in the first day") and source it from Vercel analytics, never from memory.
+**1:55 – 2:15 · Why me** (Colosseum asks solo founders to say this)
+"I'm a Solana tooling contributor and I hold this hedge myself. I built ExitPlan solo with AI coding agents: my part was the spec, checking the margin math against the live exchange, and the 262 tests. The hard part was not the UI; it was making the margin model match the exchange on real accounts."
 
-**2:25 – 2:45 · What is real, what is next**
-"Read-only today, by design: real positions, a verified account mode, exchange-matching margin math, your own fees, carry, lot-sized routes, two real Solana simulations and the Hyperliquid order built but never sent. Standard and Unified accounts. Next: one-click execution. Phantom signs the Solana leg, a builder code routes the short, CCTP brings the USDC home. Everything is MIT, and the route engine is a pure module anyone can import."
+**2:15 – 2:35 · What is next**
+"Next is execution behind the same check: Phantom signs the Solana legs, a Hyperliquid builder code routes the short, CCTP brings the USDC home. Everything is MIT, and the route engine is a module anyone can import."
 
-**2:45 – 2:55 · Close**
-"ExitPlan: the pre-flight check before you unwind. Link in the submission. Thanks."
+**2:35 – 2:55 · Close on what is real** (winners close on status, not a slogan)
+"What's real today: my own hedge, read live from both chains; margin math that matched Hyperliquid's own withdrawable; a Kamino withdrawal and a Jupiter swap simulated on Solana; the Hyperliquid order built on the live book. Nothing signed, nothing sent. ExitPlan: try it read-only on your own accounts."
+Say "to the cent" only if the take shows it. Never say the Hyperliquid withdrawal was simulated.
 
-Do not say "safe", "real-time", "audited" or "every leg simulated" (the Hyperliquid withdrawal is not). Say "read at load time", "nothing is signed", and, if you mention reviews, call them AI-assisted (Claude, Codex and Claude Opus), not independent. Keep the camera off the result banner text and off the public example's liquidation figure; your own hedge avoids both. 125–135 words per minute, captions burned in.
+Do not say "safe", "real-time", "audited", "every leg simulated" or "independent review" (say AI-assisted: Claude, Codex and Claude Opus). Keep the camera off the result banner text and off the public example's liquidation figure; your own hedge avoids both.

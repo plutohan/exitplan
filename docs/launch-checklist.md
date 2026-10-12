@@ -18,10 +18,10 @@ If you skip this, record with the public example (deep links in `docs/demo-addre
 
 ## 2. Videos (both ≤ 3:00)
 
-Colosseum's guidance: the pitch video explains the **why**; the technical demo explains the **how** (features, stack, why you prioritised what you did, how Solana is used). Record the 60–90 s proof take first and reuse it in both. Rules: 125–135 words per minute, captions burned in, segments within 3 minutes of a reload, retake anything with a fallback warning or a stale book, no AI in the demo, and never say "safe", "real-time", "audited" or "every leg simulated". After the take, fill `docs/recording-evidence.md`.
+Colosseum's guidance: the pitch video explains the **why**; the technical demo explains the **how** (features, stack, why you prioritised what you did, how Solana is used). Record the 60–90 s proof take first and reuse it in both. Rules (from 20 winner videos): use nearly the full three minutes, 150–165 words per minute in the pitch and 145–155 in the demo, name in the first 10 seconds, fee or business model by 0:55, close on what is real; segments within 3 minutes of a reload; retake anything with a fallback warning or a stale book; no AI prompt and no plan-link round trip in the demo; never say "safe", "real-time", "audited" or "every leg simulated". After the take, fill `docs/recording-evidence.md`.
 
 - Pitch: `docs/pitch-video-script.md`. Lead with the open-interest number re-pulled on the day; business model with prices; solo/AI framing once.
-- Technical demo: `docs/demo-video-script.md`. Reload positions right before each take (a snapshot older than five minutes blocks planning on purpose). Walk the readout, one rejection reason, the three-leg rehearsal (book preview with the unsigned order, Kamino simulation, Solana simulation with the Explorer link), the AI prompt with confirmation, "Copy pre-flight report" and the plan link.
+- Technical demo: `docs/demo-video-script.md`. Start inside the loaded product; one rejection reason; the three-leg rehearsal (book preview with the unsigned order, Kamino simulation, Solana simulation with the Explorer link); the architecture as challenge → solution; the CLI run. No AI prompt, no plan-link round trip.
 
 ## 2b. Early validation (an hour, worth doing before the form)
 
