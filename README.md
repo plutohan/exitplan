@@ -109,6 +109,7 @@ Every adapter fails closed with a reason code; the UI never substitutes cached o
 1. One-click execution: Phantom signs the Solana legs, a Hyperliquid builder code routes the short, CCTP brings the USDC home; the pre-flight becomes the confirmation screen.
 2. Watch tier: a standing pre-flight that alerts when a plan stops being feasible, carry flips or liquidation gets close.
 3. Embeddable check for wallets and front-ends that already earn builder fees.
+4. More venues behind the same engine: other Kamino markets, MarginFi and Jupiter Lend deposits, HIP-3 positions on Hyperliquid. Each is one adapter function; the engine and its tests do not change.
 
 ## Disclosure
 
