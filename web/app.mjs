@@ -187,7 +187,7 @@ function renderPlans() {
     displayedPlans()
       .map(
         (p) =>
-          `<div class="plan-card ${p.feasible ? '' : 'rejected'} ${selectedId === p.id ? 'selected' : ''}" data-plan="${esc(p.id)}" role="button" tabindex="0" aria-label="${esc(planName(p))}, ${p.feasible ? 'feasible, select' : 'not feasible, see why'}" aria-pressed="${selectedId === p.id}"><div class="plan-header"><span class="radio-mark" aria-hidden="true">${p.feasible ? '' : '!'}</span><h3>${planName(p)}</h3><span class="evidence-badge">${evidenceLabel()}</span>${p.id === result.best?.id ? '<span class="plan-badge">Lowest upfront cost</span>' : p.feasible ? '' : '<span class="plan-badge rejected">Not feasible</span>'}<div class="plan-cash"><small>Net cash</small>${money(p.netCash)}</div></div><p class="plan-description">${esc(planDescription(p))}</p>${p.steps.some((s) => s.action.startsWith('Withdraw and transfer')) ? '<p class="simulation-note">HL → Solana delivery fee not verified (model $1; Circle forwarding to Solana costs more and has a minimum)</p>' : ''}<div class="plan-metrics"><span>Fees <b>${money(p.fees, true)}</b></span><span>${carryText(p)[0]} <b>${carryText(p)[1]}</b></span><span>New debt <b>${money(p.newDebt)}</b></span><span>Steps <b>${p.steps.length}</b></span></div>${p.feasible ? '' : `<p class="rejection">${esc(rejectionText(p))}</p>`}</div>`,
+          `<div class="plan-card ${p.feasible ? '' : 'rejected'} ${selectedId === p.id ? 'selected' : ''}" data-plan="${esc(p.id)}" role="button" tabindex="0" aria-label="${esc(planName(p))}, ${p.feasible ? 'feasible, select' : 'not feasible, see why'}" aria-pressed="${selectedId === p.id}"><div class="plan-header"><span class="radio-mark" aria-hidden="true">${p.feasible ? '' : '!'}</span><h3>${planName(p)}</h3><span class="evidence-badge">${evidenceLabel()}</span>${p.id === result.best?.id ? '<span class="plan-badge">Lowest upfront cost</span>' : p.feasible ? '' : '<span class="plan-badge rejected">Not feasible</span>'}<div class="plan-cash"><small>Net cash</small>${money(p.netCash)}</div></div><p class="plan-description sr-only">${esc(planDescription(p))}</p><div class="plan-steps">${p.steps.map((s) => `<span class="step-chip ${s.venue.startsWith('Hyperliquid') ? 'hl' : 'sol'}"><i>${s.venue.startsWith('Hyperliquid') ? 'Hyperliquid' : 'Solana'}</i>${esc(stepName(s))} <b>${s.unit === 'USDC' ? money(s.amount, true) : num(s.amount) + ' SOL'}</b></span>`).join('<span class="step-arrow" aria-hidden="true">→</span>')}</div>${p.steps.some((s) => s.action.startsWith('Withdraw and transfer')) ? '<p class="simulation-note">HL → Solana delivery fee not verified (model $1; Circle forwarding to Solana costs more and has a minimum)</p>' : ''}<div class="plan-metrics"><span class="pill" data-stat="fees">Fees <b>${money(p.fees, true)}</b></span><span class="pill" data-stat="carry">${carryText(p)[0]} <b>${carryText(p)[1]}</b></span><span class="pill" data-stat="debt">New debt <b>${money(p.newDebt)}</b></span><span class="pill" data-stat="steps">Steps <b>${p.steps.length}</b></span></div>${p.feasible ? '' : `<p class="rejection">${esc(rejectionText(p))}</p>`}</div>`,
       )
       .join('') +
     `<button id="all-plans" class="all-plans-button">See all ${result.plans.length} evaluated candidates and the math ${icon('arrow')}</button>`;
@@ -793,8 +793,14 @@ function setImportStatus(text, isError = false) {
 function loadedStatus() {
   return `Loaded · Solana ${num(imported.solana.state.sol)} SOL · ${money(imported.solana.state.lending.usdc)} deposited · ${money(imported.solana.state.wallet.usdc, true)} in wallet · HL short ${num(imported.hyperliquid.state.shortSol)} SOL · net exposure ${num(imported.solana.state.sol - imported.hyperliquid.state.shortSol)} SOL · ${shortTime(imported.hyperliquid.observedAt)}`;
 }
+let sourceEditing = false;
+const shortAddress = (value) => (value.startsWith('0x') ? `${value.slice(0, 6)}…${value.slice(-4)}` : `${value.slice(0, 4)}…${value.slice(-4)}`);
 function renderSource() {
   const isImported = portfolio.evidence === 'imported';
+  const showSummary = isImported && Boolean(imported) && !sourceEditing;
+  $('#source-summary').toggleAttribute('hidden', !showSummary);
+  if (showSummary) $('#source-summary-text').textContent = `Loaded · Solana ${shortAddress(imported.solana.address)} · Hyperliquid ${shortAddress(imported.hyperliquid.address)} · ${shortTime(imported.hyperliquid.observedAt)}`;
+  $('#import-row').toggleAttribute('hidden', sourceMode !== 'import' || showSummary);
   $('#source-badge').textContent = evidenceLabel();
   $('#sol-price').textContent = 'SOL ' + money(portfolio.solana.solPrice, true);
   $('.demo-label').innerHTML = isImported
@@ -814,17 +820,54 @@ function renderSource() {
   renderPreflight();
   $('#share-link').disabled = !imported;
 }
+let preflightOpen = false;
+function renderSummary() {
+  const h = portfolio.hyperliquid, s = portfolio.solana, isImported = portfolio.evidence === 'imported' && imported;
+  const net = s.sol - h.shortSol;
+  const required = requiredMarginCents(h.shortSol, h.markPrice, h.conservativeMarginRate) / 100;
+  const buffer = h.collateral - required;
+  const share = (value) => (h.collateral > 0 ? Math.max(0, Math.min(100, (value / h.collateral) * 100)) : 0);
+  const liq = isImported ? imported.hyperliquid.reported.liquidationPrice : null;
+  const distance = liq && h.markPrice ? (liq - h.markPrice) / h.markPrice : null;
+  const tiles = [
+    { key: 'sol', label: 'SOL spot', value: `${num(s.sol)} SOL`, sub: `at ${money(s.solPrice, true)}` },
+    { key: 'short', label: 'Hyperliquid short', value: `${num(h.shortSol)} SOL`, sub: `mark ${money(h.markPrice, true)}` },
+    { key: 'net', label: 'Net exposure', value: `${num(net)} SOL`, sub: Math.abs(net) < 0.000001 ? 'neutral' : net > 0 ? 'net long' : 'net short', warn: Math.abs(net) >= 0.000001 },
+    { key: 'buffer', label: 'HL withdrawable now', value: money(h.freeWithdrawable, true), sub: `model buffer ${money(buffer)} · floor ${money(constraints.minHlBuffer)}`, meter: share(Math.min(buffer, h.freeWithdrawable)), marker: share(constraints.minHlBuffer), warn: buffer < constraints.minHlBuffer },
+    { key: 'liquidation', label: 'Liquidation', value: liq ? money(liq, true) : h.shortSol > 0 ? 'estimate only' : 'no short', sub: distance != null ? `${(distance * 100).toFixed(0)}% away from mark` : isImported ? 'exchange price unavailable' : 'synthetic scenario', meter: distance != null ? Math.max(0, Math.min(100, (distance / 0.5) * 100)) : null, warn: distance != null && distance < 0.25 },
+    { key: 'kamino', label: 'Kamino deposit', value: money(s.lending.usdc, true), sub: isImported && imported.solana.reported.reserveLiquidity != null ? `pool cash ${money(imported.solana.reported.reserveLiquidity)}` : `withdrawable ${money(s.lending.withdrawCapacity)}` },
+    { key: 'wallet', label: 'Wallet USDC', value: money(s.wallet.usdc, true), sub: 'used first, no fee' },
+  ];
+  $('#summary-kpis').innerHTML = tiles.map((tile) => `<div class="kpi ${tile.warn ? 'warn' : ''}" data-kpi="${tile.key}"><span class="kpi-label">${esc(tile.label)}</span><b>${esc(tile.value)}</b><small>${esc(tile.sub)}</small>${tile.meter != null ? `<div class="meter" aria-hidden="true"><span style="width:${tile.meter.toFixed(1)}%"></span>${tile.marker != null ? `<i style="left:${tile.marker.toFixed(1)}%"></i>` : ''}</div>` : ''}</div>`).join('');
+  $('#summary-badge').textContent = evidenceLabel();
+}
 function renderPreflight() {
   const panel = $('#preflight');
+  renderSummary();
   if (portfolio.evidence !== 'imported' || !imported) {
     panel.toggleAttribute('hidden', true);
+    $('#preflight-bar').toggleAttribute('hidden', true);
     return;
   }
   const items = preflightItems();
+  const okCount = items.filter((i) => i.status === 'ok').length, warnings = items.filter((i) => i.status === 'warn');
+  $('#preflight-summary').textContent = `Pre-flight: ${okCount} ok · ${warnings.length} warning${warnings.length === 1 ? '' : 's'}`;
+  $('#preflight-warnings').innerHTML = warnings.map((i) => `<span>${esc(i.label)}</span>`).join('');
+  $('#preflight-toggle').textContent = preflightOpen ? 'Hide checks' : 'Show checks';
+  $('#preflight-bar').toggleAttribute('hidden', false);
   $('#preflight-items').innerHTML = items.map((i) => `<li class="${i.status}"><b>${esc(i.label)}</b> · ${esc(i.detail)}</li>`).join('');
   $('#preflight-badge').textContent = evidenceLabel();
-  panel.toggleAttribute('hidden', false);
+  panel.toggleAttribute('hidden', !preflightOpen);
 }
+$('#source-change').addEventListener('click', () => {
+  sourceEditing = true;
+  renderSource();
+  $('#solana-address').focus?.();
+});
+$('#preflight-toggle').addEventListener('click', () => {
+  preflightOpen = !preflightOpen;
+  renderPreflight();
+});
 function setSource(mode) {
   sourceMode = mode;
   $('#source-import').checked = mode === 'import';
@@ -884,6 +927,7 @@ async function loadPositions() {
     }
     portfolio = candidate;
     imported = { solana, hyperliquid, at: Date.now() };
+    sourceEditing = false;
     try { if (location.hash !== `#${planLink().split('#')[1]}`) history.replaceState(null, '', planLink()); } catch {}
     const bufferNow = initialHlBuffer();
     const floorNote =
@@ -922,7 +966,7 @@ $$('input[name="source"]').forEach((radio) =>
 $('#load-positions').addEventListener('click', loadPositions);
 const EXAMPLE = {
   solana: 'DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK',
-  hyperliquid: '0x4bdf1130109e9c1bc921d8979ea66284d9c92f37',
+  hyperliquid: '0x7b7f72a28fe109fa703eeed7984f2a8a68fedee2', // standard account, SOL short among a few positions; a market maker, so resting orders reserve margin the model does not read
 };
 $('#try-live').addEventListener('click', async () => {
   $('#source-import').checked = true;

@@ -767,7 +767,8 @@ test('a deep link pre-fills both addresses and the target and loads positions', 
   assert.equal(ui.get('#hl-address').value, HL_ADDRESS);
   assert.equal(ui.get('#target').value, '500');
   assert.ok(ui.get('.evidence-badge').textContent.startsWith('IMPORTED'));
-  assert.equal(ui.get('#import-row').hasAttribute('hidden'), false);
+  assert.equal(ui.get('#import-row').hasAttribute('hidden'), true, 'after the load the inputs fold into the summary bar');
+  assert.equal(ui.get('#source-summary').hasAttribute('hidden'), false);
 });
 
 test('the example button fills the public addresses and loads; copy link builds a deep link', async t => {
@@ -963,6 +964,10 @@ test('the pre-flight readout appears only for imported positions and grades each
   const ui = await mount(t, { externalResponse: external() });
   assert.equal(ui.get('#preflight').hasAttribute('hidden'), true, 'hidden in the synthetic scenario');
   await importPositions(ui);
+  assert.equal(ui.get('#preflight').hasAttribute('hidden'), true, 'the check list stays collapsed behind the summary line');
+  assert.equal(ui.get('#preflight-bar').hasAttribute('hidden'), false);
+  assert.match(ui.get('#preflight-summary').textContent, /\d+ ok · \d+ warning/);
+  await ui.click('#preflight-toggle');
   assert.equal(ui.get('#preflight').hasAttribute('hidden'), false);
   const items = [...ui.document.querySelectorAll('#preflight-items li')];
   const text = key => items.find(li => new RegExp(key).test(li.textContent));
@@ -1200,4 +1205,60 @@ test('a deep link that changes the address while a rehearsal is open closes it b
   ui.window.dispatchEvent(new ui.window.Event('hashchange'));
   assert.equal(ui.document.querySelector('.rehearsal-step'), null, 'the rehearsal of the old account is gone before the new import starts');
   assert.equal(ui.get('#solana-address').value, '8mgVs81Psuz72TAPjjz1KAjLbefUPxh73Qo4JkfcVu4x');
+});
+
+test('the position summary strip shows the numbers that matter at a glance, with meters and the check summary', async t => {
+  const ui = await mount(t, { externalResponse: external() });
+  assert.equal(ui.get('#summary').hasAttribute('hidden'), false, 'the scenario has a summary too');
+  assert.match(ui.get('[data-kpi="sol"]').textContent, /100 SOL/);
+  assert.equal(ui.get('#preflight-bar').hasAttribute('hidden'), true, 'no checks for a synthetic scenario');
+  await importPositions(ui);
+  const kpi = key => ui.get(`[data-kpi="${key}"]`);
+  assert.match(kpi('sol').textContent, /3\.22 SOL/);
+  assert.match(kpi('short').textContent, /91\.32 SOL/);
+  assert.match(kpi('net').textContent, /-88\.1 SOL/);
+  assert.ok(kpi('net').classList.contains('warn'));
+  assert.match(kpi('buffer').textContent, /\$5,4\d\d/);
+  assert.match(kpi('buffer').textContent, /floor \$1,500/);
+  const meter = kpi('buffer').querySelector('.meter > span');
+  assert.ok(meter && /width:\s*\d+(\.\d+)?%/.test(meter.getAttribute('style')), 'buffer meter has a width');
+  assert.match(kpi('liquidation').textContent, /\$267/);
+  assert.match(kpi('liquidation').textContent, /1\d\d% away/);
+  assert.match(kpi('kamino').textContent, /\$9,607/);
+  assert.match(kpi('wallet').textContent, /\$336\.40/);
+  assert.match(ui.get('#preflight-summary').textContent, /ok · 1 warning/);
+  assert.match(ui.get('#preflight-warnings').textContent, /Net exposure/);
+  await ui.input('#min-buffer', 100000);
+  assert.match(ui.get('#preflight-summary').textContent, /2 warnings/);
+  assert.ok(kpi('buffer').classList.contains('warn'), 'the buffer tile turns to a warning when it sits under the floor');
+});
+
+test('after a load the address panel collapses to a one-line summary with a Change button, and the step headers read 1·2·3', async t => {
+  const ui = await mount(t, { externalResponse: external() });
+  assert.equal(ui.get('#source-summary').hasAttribute('hidden'), true, 'nothing to summarise before a load');
+  await importPositions(ui);
+  assert.equal(ui.get('#source-summary').hasAttribute('hidden'), false);
+  assert.match(ui.get('#source-summary').textContent, /DrED…tZsK/);
+  assert.match(ui.get('#source-summary').textContent, /0x3de9…b9a1/);
+  assert.equal(ui.get('#import-row').hasAttribute('hidden'), true, 'the inputs fold away once positions are loaded');
+  await ui.click('#source-change');
+  assert.equal(ui.get('#import-row').hasAttribute('hidden'), false);
+  assert.match(ui.get('.goal-panel .step-number').textContent, /^1$/);
+  assert.match(ui.get('.results-panel .step-number').textContent, /^2$/);
+  assert.match(ui.get('.decision-panel .step-number').textContent, /^3$/);
+  assert.ok(ui.document.querySelector('.decision-panel').compareDocumentPosition(ui.document.querySelector('#portfolio')) & 4, 'the selected-route step comes before the before/after cards');
+});
+
+test('route cards show the steps as chips and the numbers as pills', async t => {
+  const ui = await mount(t, { externalResponse: external() });
+  await importPositions(ui);
+  await ui.input('#target', 500);
+  const card = ui.document.querySelector('[data-plan="paired-unwind"]');
+  const chips = [...card.querySelectorAll('.step-chip')];
+  assert.equal(chips.length, 3, 'wallet, reduce short, sell SOL');
+  assert.match(chips[1].textContent, /Hyperliquid/);
+  assert.match(chips[1].textContent, /SOL/);
+  assert.ok(card.querySelector('.pill[data-stat="fees"]'));
+  assert.ok(card.querySelector('.pill[data-stat="carry"]'));
+  assert.match(card.querySelector('.plan-cash').textContent, /\$50\d/);
 });
