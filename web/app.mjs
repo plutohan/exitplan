@@ -789,6 +789,9 @@ $('#refresh-market').addEventListener('click', async () => {
 function setImportStatus(text, isError = false) {
   $('#import-status').textContent = text;
   $('#import-status').classList.toggle('error', isError);
+  // The summary bar already says what was loaded; the long status line only shows while editing or on errors/hints.
+  const redundant = !isError && /^Loaded/.test(text) && portfolio.evidence === 'imported' && Boolean(imported) && !sourceEditing;
+  $('#import-status').toggleAttribute('hidden', redundant);
 }
 function loadedStatus() {
   return `Loaded · Solana ${num(imported.solana.state.sol)} SOL · ${money(imported.solana.state.lending.usdc)} deposited · ${money(imported.solana.state.wallet.usdc, true)} in wallet · HL short ${num(imported.hyperliquid.state.shortSol)} SOL · net exposure ${num(imported.solana.state.sol - imported.hyperliquid.state.shortSol)} SOL · ${shortTime(imported.hyperliquid.observedAt)}`;
@@ -801,6 +804,7 @@ function renderSource() {
   $('#source-summary').toggleAttribute('hidden', !showSummary);
   if (showSummary) $('#source-summary-text').textContent = `Loaded · Solana ${shortAddress(imported.solana.address)} · Hyperliquid ${shortAddress(imported.hyperliquid.address)} · ${shortTime(imported.hyperliquid.observedAt)}`;
   $('#import-row').toggleAttribute('hidden', sourceMode !== 'import' || showSummary);
+  $('#import-status').toggleAttribute('hidden', showSummary && /^Loaded/.test($('#import-status').textContent));
   $('#source-badge').textContent = evidenceLabel();
   $('#sol-price').textContent = 'SOL ' + money(portfolio.solana.solPrice, true);
   $('.demo-label').innerHTML = isImported
@@ -821,6 +825,7 @@ function renderSource() {
   $('#share-link').disabled = !imported;
 }
 let preflightOpen = false;
+const bigMoney = (n) => (Math.abs(n) >= 100_000 ? money(Math.round(n)) : money(n, true)); // six figures and up: no cents, so the tile stays readable
 function renderSummary() {
   const h = portfolio.hyperliquid, s = portfolio.solana, isImported = portfolio.evidence === 'imported' && imported;
   const net = s.sol - h.shortSol;
@@ -833,12 +838,12 @@ function renderSummary() {
     { key: 'sol', label: 'SOL spot', value: `${num(s.sol)} SOL`, sub: `at ${money(s.solPrice, true)}` },
     { key: 'short', label: 'Hyperliquid short', value: `${num(h.shortSol)} SOL`, sub: `mark ${money(h.markPrice, true)}` },
     { key: 'net', label: 'Net exposure', value: `${num(net)} SOL`, sub: Math.abs(net) < 0.000001 ? 'neutral' : net > 0 ? 'net long' : 'net short', warn: Math.abs(net) >= 0.000001 },
-    { key: 'buffer', label: 'HL withdrawable now', value: money(h.freeWithdrawable, true), sub: `model buffer ${money(buffer)} · floor ${money(constraints.minHlBuffer)}`, meter: share(Math.min(buffer, h.freeWithdrawable)), marker: share(constraints.minHlBuffer), warn: buffer < constraints.minHlBuffer },
-    { key: 'liquidation', label: 'Liquidation', value: liq ? money(liq, true) : h.shortSol > 0 ? 'estimate only' : 'no short', sub: distance != null ? `${(distance * 100).toFixed(0)}% away from mark` : isImported ? 'exchange price unavailable' : 'synthetic scenario', meter: distance != null ? Math.max(0, Math.min(100, (distance / 0.5) * 100)) : null, warn: distance != null && distance < 0.25 },
-    { key: 'kamino', label: 'Kamino deposit', value: money(s.lending.usdc, true), sub: isImported && imported.solana.reported.reserveLiquidity != null ? `pool cash ${money(imported.solana.reported.reserveLiquidity)}` : `withdrawable ${money(s.lending.withdrawCapacity)}` },
+    { key: 'buffer', label: 'HL withdrawable now', value: bigMoney(h.freeWithdrawable), sub: `model buffer ${bigMoney(buffer)} · floor ${money(constraints.minHlBuffer)}`, meter: share(Math.min(buffer, h.freeWithdrawable)), marker: share(constraints.minHlBuffer), warn: buffer < constraints.minHlBuffer },
+    { key: 'liquidation', label: 'Liquidation', value: liq ? money(liq, true) : h.shortSol > 0 ? 'estimate only' : 'no short', sub: distance != null ? (distance > 5 ? 'more than 500% above mark' : `${(distance * 100).toFixed(0)}% away from mark`) : isImported ? 'exchange price unavailable' : 'synthetic scenario', meter: distance != null ? Math.max(0, Math.min(100, (distance / 0.5) * 100)) : null, warn: distance != null && distance < 0.25 },
+    { key: 'kamino', label: 'Kamino deposit', value: bigMoney(s.lending.usdc), sub: isImported && imported.solana.reported.reserveLiquidity != null ? `pool cash ${money(imported.solana.reported.reserveLiquidity)}` : `withdrawable ${money(s.lending.withdrawCapacity)}` },
     { key: 'wallet', label: 'Wallet USDC', value: money(s.wallet.usdc, true), sub: 'used first, no fee' },
   ];
-  $('#summary-kpis').innerHTML = tiles.map((tile) => `<div class="kpi ${tile.warn ? 'warn' : ''}" data-kpi="${tile.key}"><span class="kpi-label">${esc(tile.label)}</span><b>${esc(tile.value)}</b><small>${esc(tile.sub)}</small>${tile.meter != null ? `<div class="meter" aria-hidden="true"><span style="width:${tile.meter.toFixed(1)}%"></span>${tile.marker != null ? `<i style="left:${tile.marker.toFixed(1)}%"></i>` : ''}</div>` : ''}</div>`).join('');
+  $('#summary-kpis').innerHTML = tiles.map((tile) => `<div class="kpi ${tile.warn ? 'warn' : ''} ${tile.value.length > 9 ? 'long' : ''}" data-kpi="${tile.key}"><span class="kpi-label">${esc(tile.label)}</span><b>${esc(tile.value)}</b><small>${esc(tile.sub)}</small>${tile.meter != null ? `<div class="meter" aria-hidden="true"><span style="width:${tile.meter.toFixed(1)}%"></span>${tile.marker != null ? `<i style="left:${tile.marker.toFixed(1)}%"></i>` : ''}</div>` : ''}</div>`).join('');
   $('#summary-badge').textContent = evidenceLabel();
 }
 function renderPreflight() {

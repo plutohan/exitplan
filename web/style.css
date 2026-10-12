@@ -56,3 +56,5 @@ body{font-size:14px}.eyebrow{font-size:10px}.workspace-label{font-size:10px}.nav
 .pill{display:inline-flex;gap:5px;align-items:center;font-size:11px;border:1px solid #2a3327;border-radius:999px;padding:2px 9px;color:#9aa697;white-space:nowrap}.pill b{color:#dfe7da;font-weight:600;margin:0}.plan-metrics{flex-wrap:wrap;gap:6px}
 .decision-panel{margin-top:22px}.bottom-grid{grid-template-columns:1fr}
 @media (max-width:720px){.plan-steps,.plan-metrics{margin-left:0}}
+.kpi.long b{font-size:16px;letter-spacing:-.3px}#import-status[hidden]{display:none}
+@media (max-width:720px){.kpi.long b{font-size:15px}}

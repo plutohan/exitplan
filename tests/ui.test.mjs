@@ -1262,3 +1262,18 @@ test('route cards show the steps as chips and the numbers as pills', async t => 
   assert.ok(card.querySelector('.pill[data-stat="carry"]'));
   assert.match(card.querySelector('.plan-cash').textContent, /\$50\d/);
 });
+
+test('summary tiles stay readable with whale-sized numbers and the loaded status line does not repeat the summary bar', async t => {
+  const hl = structuredClone(hlShort);
+  hl.marginSummary.accountValue = '2500000'; hl.withdrawable = '1030715.55';
+  const sol = hl.assetPositions.find(a => a.position.coin === 'SOL').position; sol.liquidationPx = '5937.2';
+  const ui = await mount(t, { externalResponse: external({ hl }) });
+  await importPositions(ui);
+  const buffer = ui.get('[data-kpi="buffer"] b').textContent;
+  assert.match(buffer, /^\$1,030,716$/, 'six figures and up drop the cents: ' + buffer);
+  assert.ok(ui.get('[data-kpi="buffer"]').classList.contains('long'));
+  assert.match(ui.get('[data-kpi="liquidation"]').textContent, /more than 500% above mark/);
+  assert.equal(ui.get('#import-status').hasAttribute('hidden'), true, 'the Loaded… line is redundant next to the summary bar');
+  await ui.click('#source-change');
+  assert.equal(ui.get('#import-status').hasAttribute('hidden'), false);
+});
