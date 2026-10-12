@@ -477,6 +477,7 @@ $$('.reset-all').forEach((b) =>
     importSequence++;
     portfolio = createDemoPortfolio();
     imported = null;
+    staleImport = false;
     try { history.replaceState(null, '', location.pathname + location.search); } catch {}
     if (/sol=/.test(String(location.hash || ''))) location.hash = ''; // a reload must not resurrect the imported plan
     recalculate();
@@ -822,6 +823,7 @@ function loadedStatus() {
   return `Loaded · Solana ${num(imported.solana.state.sol)} SOL · ${money(imported.solana.state.lending.usdc)} deposited · ${money(imported.solana.state.wallet.usdc, true)} in wallet · HL short ${num(imported.hyperliquid.state.shortSol)} SOL · net exposure ${num(imported.solana.state.sol - imported.hyperliquid.state.shortSol)} SOL · ${shortTime(imported.hyperliquid.observedAt)}`;
 }
 let sourceEditing = false;
+let staleImport = false; // a load for other addresses failed, so the readout still shows the earlier snapshot
 const shortAddress = (value) => (value.startsWith('0x') ? `${value.slice(0, 6)}…${value.slice(-4)}` : `${value.slice(0, 4)}…${value.slice(-4)}`);
 function renderSource() {
   const isImported = portfolio.evidence === 'imported';
@@ -842,7 +844,7 @@ function renderSource() {
     ? `Planning uses the Jupiter quote SOL ${money(portfolio.solana.solPrice, true)}`
     : 'Planning assumes SOL $100';
   $('.guide').toggleAttribute('hidden', isImported);
-  $('#workspace-label').textContent = isImported ? 'Imported positions' : 'Synthetic scenario';
+  $('#workspace-label').textContent = isImported ? (staleImport ? 'Imported positions · previous snapshot' : 'Imported positions') : 'Synthetic scenario';
   $('#try-live').toggleAttribute('hidden', isImported);
   const marketNote = $('#market-reference-value');
   if (/reference only/.test(marketNote.textContent)) marketNote.textContent = isImported ? 'The public market mid is a reference only; planning uses the Jupiter quote and the position mark read at load' : 'The public market price is a reference only and does not reprice the synthetic scenario';
@@ -960,6 +962,7 @@ async function loadPositions() {
     }
     portfolio = candidate;
     imported = { solana, hyperliquid, at: Date.now() };
+    staleImport = false;
     track('live-import');
     sourceEditing = false;
     try { if (location.hash !== `#${planLink().split('#')[1]}`) history.replaceState(null, '', planLink()); } catch {}
@@ -982,10 +985,15 @@ async function loadPositions() {
     toast('Positions loaded from public APIs');
   } catch (error) {
     if (sequence !== importSequence) return;
+    const stale = Boolean(imported) && version === revision && (imported.solana.address !== solanaAddress || imported.hyperliquid.address !== hlAddress);
+    if (stale) {
+      staleImport = true;
+      renderSource();
+    }
     setImportStatus(
       version !== revision
         ? 'Load cancelled because the conditions changed while loading. Press Load positions again.'
-        : `Could not load positions: ${error?.message || 'unknown error'}`,
+        : `Could not load positions: ${error?.message || 'unknown error'}${stale ? ` · The readout still shows the previous snapshot (Solana ${shortAddress(imported.solana.address)} · Hyperliquid ${shortAddress(imported.hyperliquid.address)} · ${shortTime(imported.hyperliquid.observedAt)}), not these addresses` : ''}`,
       true,
     );
   } finally {

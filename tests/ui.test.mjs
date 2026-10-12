@@ -1466,3 +1466,32 @@ test('an imported rehearsal whose simulations all pass still ends clean', async 
   const summary = ui.get('.rehearsal-complete').textContent;
   assert.doesNotMatch(summary, /not run|failed|warnings/, summary);
 });
+
+test('a failed load for new addresses says the readout still shows the previous snapshot', async t => {
+  const OTHER = '0x' + 'b'.repeat(40);
+  const base = external();
+  const ui = await mount(t, { externalResponse: async call => {
+    const target = new URL(call.url);
+    if (target.host === 'api.hyperliquid.xyz') {
+      const body = JSON.parse(call.body);
+      if (body.type === 'userAbstraction' && body.user === OTHER) return json('portfolioMargin'); // the importer rejects this mode
+    }
+    return base(call);
+  } });
+  await importPositions(ui);
+  assert.match(ui.get('#import-status').textContent, /Loaded/);
+  await ui.click('#source-change');
+  await ui.input('#hl-address', OTHER);
+  await ui.click('#load-positions');
+  for (let i = 0; i < 400 && /Loading positions/.test(ui.get('#import-status').textContent); i++) await flush();
+  const status = ui.get('#import-status').textContent;
+  assert.match(status, /Could not load positions/);
+  assert.match(status, /previous snapshot/);
+  assert.match(status, new RegExp(HL_ADDRESS.slice(0, 6)), 'names the snapshot that is still on screen');
+  assert.match(ui.get('#workspace-label').textContent, /previous snapshot/);
+  // a later successful load clears the note
+  await ui.input('#hl-address', HL_ADDRESS);
+  await ui.click('#load-positions');
+  for (let i = 0; i < 400 && /Loading positions/.test(ui.get('#import-status').textContent); i++) await flush();
+  assert.doesNotMatch(ui.get('#workspace-label').textContent, /previous snapshot/);
+});
