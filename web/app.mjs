@@ -681,6 +681,11 @@ function setAiStatus(connected) {
   $('#ai-status').textContent = connected ? 'AI connected' : 'AI offline';
   $('#ai-status').classList.toggle('connected', connected);
 }
+function setIntentFormEnabled(enabled) {
+  $('#intent').disabled = !enabled;
+  $('#intent-submit').disabled = !enabled;
+  $$('.prompt-examples button').forEach((button) => { button.disabled = !enabled; });
+}
 async function checkAiStatus() {
   try {
     const response = await fetch('/api/status', {
@@ -690,11 +695,13 @@ async function checkAiStatus() {
     if (!response.ok) throw new Error();
     const data = await response.json();
     setAiStatus(data.aiConfigured === true);
+    setIntentFormEnabled(data.aiConfigured === true);
     if (data.aiConfigured !== true)
       $('#intent-feedback').innerHTML =
         '<span class="intent-error">AI offline — adjust the conditions above directly</span>';
   } catch {
     setAiStatus(false);
+    setIntentFormEnabled(false);
     $('#intent-feedback').innerHTML =
       '<span class="intent-error">AI offline — adjust the conditions above directly</span>';
   }

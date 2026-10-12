@@ -1506,3 +1506,20 @@ test('when the clipboard is unavailable the plan link is offered as selectable t
   assert.match(box.value || box.textContent, /#sol=/);
   assert.equal(ui.get('#detail-dialog').open, true);
 });
+
+test('with the AI assistant offline the free-text form is disabled instead of inviting a request that will fail', async t => {
+  const ui = await mount(t, { aiConfigured: false });
+  for (let i = 0; i < 40 && !/offline/.test(ui.get('#intent-feedback').textContent); i++) await flush();
+  assert.match(ui.get('#intent-feedback').textContent, /AI offline/);
+  assert.equal(Boolean(ui.get('#intent').disabled), true);
+  assert.equal(Boolean(ui.get('#intent-submit').disabled), true);
+  for (const button of ui.document.querySelectorAll('.prompt-examples button')) assert.equal(Boolean(button.disabled), true);
+  const configured = await mount(t, { aiConfigured: true });
+  for (let i = 0; i < 40 && /Checking/.test(configured.get('#ai-status').textContent); i++) await flush();
+  assert.equal(Boolean(configured.get('#intent-submit').disabled), false);
+});
+
+test('the detail dialog is named by its title for assistive technology', async t => {
+  const ui = await mount(t);
+  assert.equal(ui.get('#detail-dialog').getAttribute('aria-labelledby'), 'dialog-title');
+});
