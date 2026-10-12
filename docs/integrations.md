@@ -22,3 +22,7 @@ Shared rules (`http.mjs`): 8-second timeout covering at most two attempts (one r
 ## Verified public endpoints (2026-10-11)
 
 All four public hosts answer browser requests with `Access-Control-Allow-Origin: *` (including the JSON POST preflights on Hyperliquid, publicnode and Jupiter `/swap`), and the production CSP's `connect-src` lists exactly those hosts plus `'self'`.
+
+## Analytics
+
+Vercel Web Analytics (`/_vercel/insights/script.js`, same origin, cookieless) counts page views and three named events fired from `web/app.mjs`: `try-live`, `live-import`, `rehearsal-complete`. The payload is the event name only; addresses, balances, targets and routes never leave with it, and a blocked or missing script changes nothing in the app.

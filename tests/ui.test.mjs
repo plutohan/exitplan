@@ -1312,3 +1312,32 @@ test('the hero button skips a public example that no longer holds a SOL short an
   assert.equal(probed[0], PUBLIC_EXAMPLES[0].hyperliquid);
   assert.equal(ui.get('.plan-card.selected').dataset.plan, 'paired-unwind');
 });
+
+test('anonymous usage events reach the analytics queue without any address or amount', async t => {
+  assert.match(html, /<script[^>]+src="\/_vercel\/insights\/script\.js"/, 'the Vercel Web Analytics loader must be in the page');
+  const events = [];
+  const ui = await mount(t, { externalResponse: external() });
+  ui.window.va = (kind, payload) => events.push({ kind, payload });
+  await ui.click('#try-live');
+  for (let i = 0; i < 80 && !/Loaded|Could not/.test(ui.get('#import-status').textContent); i++) await flush();
+  assert.match(ui.get('#import-status').textContent, /Loaded/);
+  const names = events.filter(e => e.kind === 'event').map(e => e.payload.name);
+  assert.deepEqual(names, ['try-live', 'live-import']);
+  const serialized = JSON.stringify(events);
+  assert.doesNotMatch(serialized, /0x[0-9a-fA-F]{40}/);
+  assert.doesNotMatch(serialized, /DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK/);
+  assert.doesNotMatch(serialized, /\d{3,}/, 'no balances or amounts in analytics payloads');
+});
+
+test('finishing a rehearsal on imported positions counts one anonymous rehearsal-complete event', async t => {
+  const events = [];
+  const ui = await mount(t, { externalResponse: external() });
+  ui.window.va = (kind, payload) => { if (kind === 'event') events.push(payload.name); };
+  await importPositions(ui);
+  await ui.click('#rehearse');
+  for (let i = 0; i < 8 && !/Rehearsal complete/.test(ui.get('#dialog-title').textContent); i++) await ui.click('#rehearsal-next');
+  assert.match(ui.get('#dialog-title').textContent, /Rehearsal complete/);
+  assert.deepEqual(events.filter(n => n === 'rehearsal-complete'), ['rehearsal-complete']);
+  await ui.click('#rehearsal-next'); // closing the dialog does not count again
+  assert.deepEqual(events.filter(n => n === 'rehearsal-complete'), ['rehearsal-complete']);
+});

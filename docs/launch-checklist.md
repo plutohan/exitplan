@@ -37,5 +37,6 @@ Post the deep link to your own hedge in two or three places where SOL hedgers ar
 ## 4. Operations
 
 - OpenAI: keep a spend cap on the key used by `OPENAI_API_KEY` (the AI panel is public).
+- Vercel dashboard → project `exitplan` → **Analytics** → Enable (one click; free tier). The page already loads `/_vercel/insights/script.js` and sends three anonymous events (`try-live`, `live-import`, `rehearsal-complete`); until it is enabled the script 404s harmlessly. Read the `live-import` count on submission day and paste it into the form's "Users so far" line and the pitch's 0:55 validation sentence.
 - Done 2026-10-12: `SOLANA_RPC_URL` in Vercel points at a keyed Helius mainnet endpoint (server functions only; the browser keeps using publicnode). The Kamino simulation reports `rpc: mainnet.helius-rpc.com`.
 - Before the deadline, run `npm test` and open the live site once more; `docs/verification.md` lists what was checked and when.

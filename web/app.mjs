@@ -5,6 +5,12 @@ import { importSolana, isSolanaAddress } from './adapters/solana.mjs';
 import { simulateSellSol, simulateKaminoWithdraw, previewReduceShort } from './adapters/rehearsal.mjs';
 import { money, num, planName, stepName, carryText, buildImportedPortfolio, preflightChecks, buildReport as buildReportText, rejectionText as rejectionReasons, initialHlBuffer as hlBufferOf } from './report.mjs';
 
+// Anonymous usage counts (Vercel Web Analytics, cookieless): three named events and nothing else. No address, amount or route ever leaves with them.
+window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+function track(name) {
+  try { window.va('event', { name }); } catch { /* analytics must never affect the app */ }
+}
+
 const $ = (query, root = document) => root.querySelector(query);
 const $$ = (query, root = document) => [...root.querySelectorAll(query)];
 let portfolio = createDemoPortfolio(),
@@ -610,6 +616,7 @@ function renderRehearsal() {
     } else {
       rehearsal.index++;
       rehearsal.simulation = null;
+      if (rehearsal.index >= plan.steps.length && portfolio.evidence === 'imported') track('rehearsal-complete');
       renderRehearsal();
     }
   });
@@ -937,6 +944,7 @@ async function loadPositions() {
     }
     portfolio = candidate;
     imported = { solana, hyperliquid, at: Date.now() };
+    track('live-import');
     sourceEditing = false;
     try { if (location.hash !== `#${planLink().split('#')[1]}`) history.replaceState(null, '', planLink()); } catch {}
     const bufferNow = initialHlBuffer();
@@ -983,6 +991,7 @@ async function useExample() {
   return pick;
 }
 $('#try-live').addEventListener('click', async () => {
+  track('try-live');
   $('#source-import').checked = true;
   setSource('import');
   // Land where the Hyperliquid evidence is one click away: a $500 goal makes the paired trim route feasible on the public example.
