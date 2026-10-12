@@ -1361,6 +1361,7 @@ test('when no public example fits any more, the hero button says so and imports 
   assert.doesNotMatch(ui.get('#import-status').textContent, /Loaded/);
   assert.equal(ui.get('#hl-address').value, '');
   assert.equal(ui.get('#source-import').checked, true);
+  assert.equal(ui.get('#target').value, '2000', 'a failed example pick must not leave the hero target behind on the synthetic portfolio');
 });
 
 
@@ -1402,4 +1403,28 @@ test('once positions are imported, the plan-link and report buttons stay reachab
   }
   await ui.click('#share-link');
   assert.match(ui.get('#toast').textContent, /#sol=/);
+});
+
+
+test('the plan link carries the selected route and a deep link restores it', async t => {
+  const ui = await mount(t, { externalResponse: external() });
+  await importPositions(ui);
+  await ui.input('#target', 500); // the paired trim is feasible on the fixture at $500, as on the hero flow
+  await ui.click('[data-plan="paired-unwind"]');
+  assert.equal(ui.get('.plan-card.selected').dataset.plan, 'paired-unwind');
+  await ui.click('#share-link');
+  assert.match(ui.get('#toast').textContent, /plan=paired-unwind/);
+  const restored = await mount(t, { externalResponse: external(), hash: `#sol=${WALLET}&hl=${HL_ADDRESS}&target=500&plan=paired-unwind` });
+  for (let i = 0; i < 400 && !/Loaded|Could not/.test(restored.get('#import-status').textContent); i++) await flush();
+  assert.match(restored.get('#import-status').textContent, /Loaded/);
+  await flush(); // the route is restored right after the import settles
+  assert.equal(restored.get('.plan-card.selected').dataset.plan, 'paired-unwind');
+});
+
+test('reset clears the deep link so a reload does not resurrect the imported plan', async t => {
+  const ui = await mount(t, { externalResponse: external(), hash: `#sol=${WALLET}&hl=${HL_ADDRESS}&target=900` });
+  for (let i = 0; i < 400 && !/Loaded|Could not/.test(ui.get('#import-status').textContent); i++) await flush();
+  assert.match(ui.get('#import-status').textContent, /Loaded/);
+  await ui.click('.reset-all');
+  assert.doesNotMatch(String(globalThis.location.hash || ''), /sol=/); // the app reads the global location the harness installs
 });

@@ -152,3 +152,8 @@ export function buildReport({ imported, portfolio, result, constraints, selected
   ].join('\n');
 }
 
+/** A before/after cell: a missing value (for example no liquidation price once the short is closed) reads as a dash, never as $0. */
+export function positionCell(value, cash) {
+  if (value === null || value === undefined || Number.isNaN(value)) return '—';
+  return cash ? money(value) : num(value);
+}

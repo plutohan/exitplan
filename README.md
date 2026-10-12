@@ -2,7 +2,7 @@
 
 **Live:** https://exitplan-rouge.vercel.app · **Hackathon:** Colosseum Crypto World's Fair 2026, Solana and Hyperliquid tracks · **License:** MIT · **Tests:** 279 (`npm test`) [![tests](https://github.com/plutohan/exitplan/actions/workflows/test.yml/badge.svg)](https://github.com/plutohan/exitplan/actions/workflows/test.yml)
 
-Give ExitPlan two addresses (a Solana wallet, a Hyperliquid account), a cash goal and the limits you refuse to break. It reads both chains, finds every route that keeps your exposure, margin and debt rules, explains every route that fails, prices each one with your own fees and the carry it gives up, and rehearses the legs before you sign: the Solana transactions through real `simulateTransaction` runs, the Hyperliquid order built on the live book. **Nothing is ever signed or sent.**
+Give ExitPlan two addresses (a Solana wallet, a Hyperliquid account), a cash goal and the limits you refuse to break. It reads both chains, evaluates a bounded set of unwind routes against your exposure, margin and debt rules, explains every route that fails, prices each one with your own fees and the carry it gives up, and rehearses the legs before you sign: the Solana transactions through real `simulateTransaction` runs, the Hyperliquid order built on the live book. **Nothing is ever signed or sent.**
 
 ![Position summary on a live standard account: SOL spot, Hyperliquid short, net exposure, HL withdrawable with the model buffer and floor meter, liquidation distance, Kamino deposit, wallet USDC, and the pre-flight check summary](docs/images/preflight-readout.png)
 
@@ -27,7 +27,7 @@ Phantom put Hyperliquid perps one tap away from Solana spot, so a common positio
 | Margin math matches the exchange | Every position reserves max(initial margin, 10% of notional), Hyperliquid's transfer rule; on live accounts the model's withdrawable matched the exchange's: $5,444.93 against $5,444.94 on a Standard account and $15,436.60 to the cent on a Unified account (2026-10-12); any gap from resting orders is shown as such | pre-flight check "HL margin buffer", `docs/verification.md` |
 | Routes are placeable | Short reductions sized in the 0.01 SOL lot from `meta`, checked against the $10 minimum, priced at your own `userFees` taker rate plus a 10 bps execution allowance | route cards, `docs/engine.md` |
 | The Hyperliquid leg is built, not imagined | `l2Book` walk: average buy-back price, slippage, levels, book age, cost against the plan, and the inner unsigned reduce-only IOC order (asset index, size, tick-rounded limit capped at the allowance); withheld when the book is stale | rehearsal, step "Reduce SOL short" |
-| The Solana legs really simulate | Kamino's SDK builds the real withdrawal, Jupiter builds the real swap; both run through `simulateTransaction` and report compute units and what would arrive; each has a Solana Explorer inspector link and a copy of the unsigned transaction | rehearsal, steps "Withdraw deposited USDC" and "Sell SOL spot" |
+| The Solana legs really simulate | Kamino's SDK builds the real withdrawal, Jupiter builds the real swap; both run through `simulateTransaction` and report compute units, the Kamino leg the USDC the simulation delivers and the Jupiter leg its quoted output against the plan; each has a Solana Explorer inspector link and a copy of the unsigned transaction | rehearsal, steps "Withdraw deposited USDC" and "Sell SOL spot" |
 | Carry is visible | Each route shows the yearly carry it gives up: 7-day average funding on the short reduced plus Kamino supply APY on the deposit withdrawn (shown, not ranked) | route cards, pre-flight check "Carry" |
 | The engine is deterministic and fail-closed | Integer-cent arithmetic, duplicate allocations collapsed, 279 tests including a 650-plan conservation grid and a lot-size property grid | `web/engine.mjs`, `tests/` |
 | AI never acts on its own | Plain-English goal → schema-validated constraint proposal → applied only after you confirm | `api/intent.js`, `server/intent.mjs` |
@@ -39,6 +39,7 @@ Phantom put Hyperliquid perps one tap away from Solana spot, so a common positio
 - The Hyperliquid withdrawal leg is listed, not simulated (it needs a signed exchange request); the HL → Solana delivery fee is a $1 placeholder, not a CCTP quote.
 - Positions on other perp DEXs (HIP-3) are not read; a cross-check flags unified accounts where that matters. Margin reserved by resting orders is not modelled; the readout shows the gap and routes use the exchange's withdrawable.
 - Only Kamino obligations that hold USDC alone are supported; mixed collateral and existing borrows are rejected with a reason.
+- Planning prices a SOL sale from a 1 SOL Jupiter quote plus a price-impact allowance; the rehearsal re-quotes the exact amount and shows the difference, so large sales can look better in the plan than in the rehearsal.
 - Carry is an estimate at today's rates. Ranking means lowest upfront fees among a bounded set of candidates, not a global optimum or financial advice.
 
 ## Why it fits each track

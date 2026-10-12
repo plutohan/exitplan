@@ -3,7 +3,7 @@ import { importHyperliquid, estimateLiquidationAfter, hasSolShort } from './adap
 import { pickPublicExample } from './examples.mjs';
 import { importSolana, isSolanaAddress, hasKaminoUsdcAndSol } from './adapters/solana.mjs';
 import { simulateSellSol, simulateKaminoWithdraw, previewReduceShort } from './adapters/rehearsal.mjs';
-import { money, num, planName, stepName, carryText, buildImportedPortfolio, preflightChecks, buildReport as buildReportText, rejectionText as rejectionReasons, initialHlBuffer as hlBufferOf } from './report.mjs';
+import { money, num, planName, stepName, carryText, buildImportedPortfolio, preflightChecks, buildReport as buildReportText, rejectionText as rejectionReasons, initialHlBuffer as hlBufferOf, positionCell } from './report.mjs';
 
 // Anonymous usage counts (Vercel Web Analytics, cookieless): three named events and nothing else. No address, amount or route ever leaves with them.
 window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
@@ -311,7 +311,7 @@ function renderPositions() {
   $('#position-cards').innerHTML = positionCards
     .map(
       (c) =>
-        `<article class="position-card"><div class="position-label">${icon(c.icon)}${c.name}</div><div class="position-values"><span class="position-before">${c.cash ? money(c.before) : num(c.before)}</span><span class="position-arrow">→</span><span class="position-after">${p ? (c.cash ? money(c.after) : num(c.after)) : '—'}<small>${c.unit}</small></span></div><div class="position-bar"><span data-bar="${Math.round(Math.max(0, Math.min(100, c.bar * 100)))}"></span></div><div class="position-caption">${c.caption}</div></article>`,
+        `<article class="position-card"><div class="position-label">${icon(c.icon)}${c.name}</div><div class="position-values"><span class="position-before">${positionCell(c.before, c.cash)}</span><span class="position-arrow">→</span><span class="position-after">${p ? positionCell(c.after, c.cash) : '—'}<small>${c.unit}</small></span></div><div class="position-bar"><span data-bar="${Math.round(Math.max(0, Math.min(100, c.bar * 100)))}"></span></div><div class="position-caption">${c.caption}</div></article>`,
     )
     .join('');
   $$('[data-bar]').forEach((bar) => {
@@ -477,6 +477,8 @@ $$('.reset-all').forEach((b) =>
     importSequence++;
     portfolio = createDemoPortfolio();
     imported = null;
+    try { history.replaceState(null, '', location.pathname + location.search); } catch {}
+    if (/sol=/.test(String(location.hash || ''))) location.hash = ''; // a reload must not resurrect the imported plan
     recalculate();
     renderGuide();
     setSource('scenario');
@@ -1001,11 +1003,11 @@ $('#try-live').addEventListener('click', async () => {
   track('try-live');
   $('#source-import').checked = true;
   setSource('import');
+  if (!(await useExample())) return; // a failed pick leaves the synthetic workspace untouched apart from the status line
   // Land where the Hyperliquid evidence is one click away: a $500 goal makes the paired trim route feasible on the public example.
   $('#target').value = '500';
   $('#target').dispatchEvent(new Event('input', { bubbles: true }));
   $('#target').dispatchEvent(new Event('change', { bubbles: true }));
-  if (!(await useExample())) return;
   await loadPositions();
   if (imported && result?.plans?.some((p) => p.id === 'paired-unwind' && p.feasible)) selectPlan('paired-unwind');
 });
@@ -1051,6 +1053,7 @@ $('#connect-phantom').addEventListener('click', async () => {
 function planLink() {
   const params = new URLSearchParams({ sol: imported.solana.address, hl: imported.hyperliquid.address });
   for (const key of ['target', 'maxNewDebt', 'minHlBuffer', 'deadlineHours', 'preserveHedge', 'preserveSolQuantity']) params.set(key, String(constraints[key]));
+  if (selectedId && result?.plans?.some((p) => p.id === selectedId && p.feasible)) params.set('plan', selectedId);
   return `${location.origin}/#${params.toString()}`;
 }
 $('#copy-report').addEventListener('click', async () => {
@@ -1110,7 +1113,10 @@ function applyDeepLink() {
     if (detail?.open) detail.close();
     $('#dialog-body').innerHTML = '';
   }
-  loadPositions();
+  const plan = params.get('plan');
+  loadPositions().then(() => {
+    if (plan && imported && result?.plans?.some((p) => p.id === plan && p.feasible)) selectPlan(plan);
+  });
 }
 recalculate();
 renderGuide();
