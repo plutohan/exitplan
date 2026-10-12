@@ -1389,3 +1389,17 @@ test('a second hero click during a slow example probe wins, and the first click 
   assert.equal(fullImports, 1, 'the stale click must not start a second import');
   assert.match(ui.get('#import-status').textContent, /Loaded/);
 });
+
+test('once positions are imported, the plan-link and report buttons stay reachable without reopening the source editor or the checks', async t => {
+  const ui = await mount(t, { externalResponse: external() });
+  await importPositions(ui);
+  assert.match(ui.get('#import-status').textContent, /Loaded/);
+  assert.equal(ui.get('#source-summary').hasAttribute('hidden'), false, 'the summary bar replaces the editor after a load');
+  for (const id of ['#share-link', '#copy-report']) {
+    const button = ui.get(id);
+    assert.equal(button.closest('[hidden]'), null, `${id} must not sit inside a hidden container after import`);
+    assert.equal(Boolean(button.disabled), false, `${id} must be enabled after import`);
+  }
+  await ui.click('#share-link');
+  assert.match(ui.get('#toast').textContent, /#sol=/);
+});

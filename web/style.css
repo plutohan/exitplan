@@ -67,3 +67,5 @@ body{font-size:14px}.eyebrow{font-size:10px}.workspace-label{font-size:10px}.nav
 /* the source, summary and checks panels take the same inner padding as the goal and routes panels */
 .source-panel,.summary,.preflight{padding:19px 23px}.source-panel .section-title,.summary .section-title,.preflight .section-title{margin-bottom:14px}
 @media (max-width:1200px){.source-panel,.summary,.preflight{padding:17px 19px}}@media (max-width:800px){.source-panel,.summary,.preflight{padding:15px 17px}}@media (max-width:680px){.source-panel,.summary,.preflight{padding:18px 16px}}
+
+.decision-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.decision-actions .report-button{margin:0}.source-summary .link-button{margin-left:4px}
