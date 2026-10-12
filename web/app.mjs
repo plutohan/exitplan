@@ -338,9 +338,14 @@ function updateControls() {
   $('#min-buffer').value = constraints.minHlBuffer;
   $('#max-debt').value = constraints.maxNewDebt;
   const borrow = portfolio.solana.borrow;
-  $('#debt-capacity').textContent = borrow?.enabled && borrow.capacity > 0
-    ? `0 = no new debt · up to ${money(Math.floor(borrow.capacity))} available against your SOL${portfolio.evidence === 'imported' ? ' (model estimate)' : ''}`
-    : '0 = no new debt · no borrow capacity read for this wallet';
+  const capacity = borrow?.enabled ? Math.floor(borrow.capacity) : 0;
+  const overCap = capacity > 0 && constraints.maxNewDebt > capacity;
+  $('#debt-capacity').textContent = overCap
+    ? `Only ${money(capacity)} can actually be borrowed against your SOL${portfolio.evidence === 'imported' ? ' (model estimate)' : ''}; a higher limit has no effect`
+    : capacity > 0
+      ? `0 = no new debt · up to ${money(capacity)} available against your SOL${portfolio.evidence === 'imported' ? ' (model estimate)' : ''}`
+      : '0 = no new debt · no borrow capacity read for this wallet';
+  $('#debt-capacity').classList.toggle('warn', overCap);
   $$('[data-target]').forEach((b) => b.classList.toggle('selected', Number(b.dataset.target) === constraints.target));
   $('.deadline-note').innerHTML =
     icon('clock') + `Planning window ${num(constraints.deadlineHours)} h · assumptions recalculated instantly`;

@@ -1539,3 +1539,16 @@ test('the new-debt limit is typed as a dollar amount, defaults to no new debt an
   await ui.input('#preserve-sol', false, 'change');
   assert.equal(ui.get('#max-debt').value, '0', 'negative or empty input means no new debt');
 });
+
+test('a debt limit above what the wallet can borrow says so instead of pretending the extra limit does anything', async t => {
+  const ui = await mount(t);
+  await ui.input('#max-debt', 1000);
+  assert.doesNotMatch(ui.get('#debt-capacity').textContent, /no effect/);
+  await ui.input('#max-debt', 5000); // the synthetic wallet can borrow $3,000 at most
+  assert.match(ui.get('#debt-capacity').textContent, /Only \$3,000 can actually be borrowed/);
+  assert.match(ui.get('#debt-capacity').textContent, /no effect/);
+  assert.ok(ui.get('#debt-capacity').classList.contains('warn'));
+  await ui.input('#max-debt', 0);
+  assert.match(ui.get('#debt-capacity').textContent, /0 = no new debt/);
+  assert.equal(ui.get('#debt-capacity').classList.contains('warn'), false);
+});
