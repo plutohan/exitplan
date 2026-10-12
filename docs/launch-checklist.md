@@ -28,5 +28,5 @@ If you skip this, record with the public example (deep links in `docs/demo-addre
 ## 4. Operations
 
 - OpenAI: keep a spend cap on the key used by `OPENAI_API_KEY` (the AI panel is public).
-- Optional: set `SOLANA_RPC_URL` in Vercel to a keyed RPC if the public mainnet RPC rate-limits the Kamino simulation during judging.
+- Done 2026-10-12: `SOLANA_RPC_URL` in Vercel points at a keyed Helius mainnet endpoint (server functions only; the browser keeps using publicnode). The Kamino simulation reports `rpc: mainnet.helius-rpc.com`.
 - Before the deadline, run `npm test` and open the live site once more; `docs/verification.md` lists what was checked and when.
