@@ -8,7 +8,9 @@ Phantom put Hyperliquid perps one tap away from Solana spot, so a common positio
 
 You give ExitPlan a **cash goal plus the limits you refuse to break** (new-debt cap, keep net SOL exposure, keep-SOL-quantity, minimum margin buffer). It reads both chains by address, evaluates up to dozens of routes, shows every route that fits and every route that does not, with the reason, and rehearses the chosen route with real `simulateTransaction` runs for the Solana legs. Nothing is signed or sent. Standard and Unified Hyperliquid accounts are supported; portfolio margin is not modelled.
 
-![Pre-flight readout on a live standard account: account mode verified, net exposure, liquidation distance, margin buffer against the floor next to the exchange's withdrawable, Kamino pool cash, wallet USDC, carry](docs/images/preflight-readout.png)
+![Position summary on a live standard account: SOL spot, Hyperliquid short, net exposure, HL withdrawable with the model buffer and floor meter, liquidation distance, Kamino deposit, wallet USDC, and the pre-flight check summary](docs/images/preflight-readout.png)
+
+![The pre-flight checks expanded: account mode, net exposure, liquidation, HL margin buffer against the exchange's withdrawable, Kamino pool cash, wallet USDC, carry, other positions, not simulated](docs/images/preflight-checks.png)
 
 <p align="center"><img src="docs/images/rehearsal-hyperliquid.png" width="49%" alt="Rehearsal, Hyperliquid step: the live order book walked for a 1.5 SOL buy-back, taker fee, cost against the plan, book age, and the unsigned reduce-only IOC order"> <img src="docs/images/rehearsal-solana.png" width="49%" alt="Rehearsal, Solana step: the Jupiter swap simulated with simulateTransaction, quoted USDC against the plan estimate, and a Solana Explorer inspector link for the unsigned transaction"></p>
 
