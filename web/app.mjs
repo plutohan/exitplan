@@ -1097,6 +1097,13 @@ $('#share-link').addEventListener('click', async () => {
     await navigator.clipboard.writeText(link);
     copied = true;
   } catch {}
+  if (!copied) {
+    openDialog(
+      'Plan link',
+      `<p class="dialog-disclaimer">The browser refused clipboard access, so select the link below to copy it. It carries both addresses and your conditions; nothing is sent anywhere.</p><textarea id="plan-link-text" class="report-text" readonly rows="3">${esc(link)}</textarea>`,
+      'READ-ONLY',
+    );
+  }
   toast(`${copied ? 'Link copied' : 'Plan link'}: ${link}`);
 });
 function applyDeepLink() {

@@ -71,3 +71,5 @@ body{font-size:14px}.eyebrow{font-size:10px}.workspace-label{font-size:10px}.nav
 .decision-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.decision-actions .report-button{margin:0}.source-summary .link-button{margin-left:4px}
 
 .rehearsal-complete.warn{color:#f5c26b;border-color:#6b5420;background:#2a2213}
+
+#plan-link-text{min-height:72px;word-break:break-all}

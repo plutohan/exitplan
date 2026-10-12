@@ -1495,3 +1495,14 @@ test('a failed load for new addresses says the readout still shows the previous 
   for (let i = 0; i < 400 && /Loading positions/.test(ui.get('#import-status').textContent); i++) await flush();
   assert.doesNotMatch(ui.get('#workspace-label').textContent, /previous snapshot/);
 });
+
+test('when the clipboard is unavailable the plan link is offered as selectable text, not only in a passing toast', async t => {
+  const ui = await mount(t, { externalResponse: external() }); // the harness has no navigator.clipboard, like a browser that refused access
+  await importPositions(ui);
+  await ui.click('#share-link');
+  assert.match(ui.get('#toast').textContent, /#sol=/);
+  const box = ui.document.querySelector('#plan-link-text');
+  assert.ok(box, 'a selectable field with the link must open');
+  assert.match(box.value || box.textContent, /#sol=/);
+  assert.equal(ui.get('#detail-dialog').open, true);
+});
