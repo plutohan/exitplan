@@ -137,3 +137,35 @@ test('a non-RPC error from the ledger lookup is still reported as an outage', as
   const result = await simulateKaminoWithdraw({ wallet: 'DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK', amountUsdc: 74.99 }, { sdk });
   assert.equal(result.status, 502);
 });
+
+test('a block-not-available error anywhere in the attempt is retried, and the second attempt succeeds', async () => {
+  const sdk = fakeSdk();
+  let calls = 0;
+  const originalLoad = sdk.KaminoMarket.load;
+  sdk.KaminoMarket.load = async (...args) => { // the fake builds a fresh market per load, so patch the one the function will use
+    const market = await originalLoad(...args);
+    const inner = market.getUserVanillaObligation;
+    market.getUserVanillaObligation = async (...a) => { calls++; if (calls === 1) { const error = new Error('Solana error #-32004'); error.context = { __code: -32004 }; throw error; } return inner(...a); };
+    return market;
+  };
+  const slept = [];
+  const result = await simulateKaminoWithdraw({ wallet: 'DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK', amountUsdc: 74.99 }, { sdk, sleep: async (ms) => { slept.push(ms); } });
+  assert.equal(result.status, 200, JSON.stringify(result.body));
+  assert.equal(result.body.ok, true);
+  assert.equal(calls, 2);
+  assert.deepEqual(slept, [300]);
+});
+
+test('three block-not-available failures in a row are reported as an outage, not retried forever', async () => {
+  const sdk = fakeSdk();
+  let calls = 0;
+  const originalLoad = sdk.KaminoMarket.load;
+  sdk.KaminoMarket.load = async (...args) => {
+    const market = await originalLoad(...args);
+    market.getUserVanillaObligation = async () => { calls++; const error = new Error('Solana error #-32004'); error.context = { __code: -32004 }; throw error; };
+    return market;
+  };
+  const result = await simulateKaminoWithdraw({ wallet: 'DrEDgXWTBfZbbVNT2ZdvxA5DUZx8CLTteGnsSJaXtZsK', amountUsdc: 74.99 }, { sdk, sleep: async () => {} });
+  assert.equal(result.status, 502);
+  assert.equal(calls, 3);
+});

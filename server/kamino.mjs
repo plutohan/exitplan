@@ -39,6 +39,10 @@ function loadSdk() {
 }
 
 
+function isBlockNotAvailable(error) {
+  return /-32004|not available for slot/i.test(`${error?.message || ''} ${error?.context?.__code ?? ''}`);
+}
+
 /** The ledger instant (slot + block time) only feeds staleness checks inside the SDK, so a block a minute old or the wall clock is good enough when the RPC has not indexed the latest blocks yet (-32004). */
 async function ledgerInstantWithRetry(lib, rpc, slot, now) {
   const back = (n) => (typeof slot === 'bigint' ? slot - BigInt(n) : slot - n);
@@ -48,14 +52,13 @@ async function ledgerInstantWithRetry(lib, rpc, slot, now) {
       return await lib.resolveLedgerInstantForSlot(rpc, back(offset), 'exitplan');
     } catch (error) {
       lastError = error;
-      const text = `${error?.message || ''} ${error?.context?.__code ?? ''}`;
-      if (!/-32004|not available for slot/i.test(text)) throw error;
+      if (!isBlockNotAvailable(error)) throw error;
     }
   }
   console.warn('kamino ledger instant fell back to the wall clock', String(lastError?.message || '').slice(0, 80));
   return { slot: back(150), blockTime: BigInt(Math.floor(now() / 1000)) };
 }
-export async function simulateKaminoWithdraw(body, { sdk, loadSdkImpl = loadSdk, rpcUrl = process.env.SOLANA_RPC_URL || DEFAULT_RPC_URL, now = Date.now } = {}) {
+export async function simulateKaminoWithdraw(body, { sdk, loadSdkImpl = loadSdk, rpcUrl = process.env.SOLANA_RPC_URL || DEFAULT_RPC_URL, now = Date.now, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) } = {}) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return { status: 400, body: { error: 'Request must be a JSON object with wallet and amountUsdc' } };
   const { wallet, amountUsdc } = body;
   if (typeof wallet !== 'string' || !SOLANA_ADDRESS.test(wallet)) return { status: 400, body: { error: 'wallet must be a Solana address' } };
@@ -74,59 +77,70 @@ export async function simulateKaminoWithdraw(body, { sdk, loadSdkImpl = loadSdk,
     }
   }
   try {
-    const rpc = lib.createSolanaRpc(rpcUrl);
-    const market = await loadMarketCached(lib, rpc, rpcUrl, now);
-    if (!market) return { status: 502, body: { error: 'Kamino market could not be loaded', ok: false } };
-    const obligation = await market.getUserVanillaObligation(lib.address(wallet));
-    if (!obligation) return { status: 404, body: { error: 'No Kamino obligation found for this wallet in the main market', ok: false } };
-    // A finalized slot is one every node already holds; a processed slot can be ahead of the RPC's block store (-32004 "Block not available").
-    const slot = await rpc.getSlot({ commitment: 'finalized' }).send();
-    const ledger = await ledgerInstantWithRetry(lib, rpc, slot, now);
-    const action = await lib.KaminoAction.buildWithdrawTxns({
-      kaminoMarket: market,
-      amount: baseUnits,
-      reserveAddress: lib.address(USDC_RESERVE),
-      owner: lib.createNoopSigner(lib.address(wallet)),
-      obligation,
-      useV2Ixs: true,
-      scopeRefreshConfig: undefined,
-      currentLedgerInstant: ledger,
-      includeAtaIxs: true,
-    });
-    const instructions = [...action.computeBudgetIxs, ...action.setupIxs, ...action.lendingIxs, ...action.cleanupIxs];
-    const labels = [...action.setupIxsLabels, ...action.lendingIxsLabels, ...action.cleanupIxsLabels];
-    const { value: latest } = await rpc.getLatestBlockhash().send();
-    const message = lib.pipe(
-      lib.createTransactionMessage({ version: 0 }),
-      (m) => lib.setTransactionMessageFeePayer(lib.address(wallet), m),
-      (m) => lib.setTransactionMessageLifetimeUsingBlockhash(latest, m),
-      (m) => lib.appendTransactionMessageInstructions(instructions, m),
-    );
-    const wire = lib.getBase64EncodedWireTransaction(lib.compileTransaction(message));
-    // Watch the wallet's USDC token account so the result says what would actually arrive, not what was requested.
-    const encoder = lib.getAddressEncoder();
-    const [usdcAta] = await lib.getProgramDerivedAddress({ programAddress: lib.address(ATA_PROGRAM), seeds: [encoder.encode(lib.address(wallet)), encoder.encode(lib.address(TOKEN_PROGRAM)), encoder.encode(lib.address(USDC_MINT))] });
-    let before = 0n;
-    try { before = BigInt((await rpc.getTokenAccountBalance(usdcAta).send()).value.amount); } catch { before = 0n; }
-    const simulation = await rpc.simulateTransaction(wire, { encoding: 'base64', sigVerify: false, replaceRecentBlockhash: true, commitment: 'processed', accounts: { encoding: 'base64', addresses: [usdcAta] } }).send();
-    const err = simulation.value?.err ?? null;
-    const deliveredUsdc = err === null ? tokenAmountDelta(simulation.value?.accounts?.[0], before) : null;
-    return {
-      status: 200,
-      body: {
-        ok: err === null,
-        error: err === null ? null : typeof err === 'string' ? err : JSON.stringify(err),
-        unitsConsumed: simulation.value?.unitsConsumed == null ? null : Number(simulation.value.unitsConsumed),
-        logCount: Array.isArray(simulation.value?.logs) ? simulation.value.logs.length : 0,
-        instructions: labels,
-        amountUsdc,
-        deliveredUsdc,
-        transactionBase64: wire, // the unsigned transaction that was simulated; never sent
-        observedAt: new Date(now()).toISOString(),
-        rpc: new URL(rpcUrl).host,
-        obligation: String(obligation.obligationAddress ?? ''),
-      },
+    // The RPC occasionally answers -32004 (block not available) for a slot it has not indexed yet; a fresh attempt a moment later succeeds.
+    const attempt = async () => {
+        const rpc = lib.createSolanaRpc(rpcUrl);
+        const market = await loadMarketCached(lib, rpc, rpcUrl, now);
+        if (!market) return { status: 502, body: { error: 'Kamino market could not be loaded', ok: false } };
+        const obligation = await market.getUserVanillaObligation(lib.address(wallet));
+        if (!obligation) return { status: 404, body: { error: 'No Kamino obligation found for this wallet in the main market', ok: false } };
+        // A finalized slot is one every node already holds; a processed slot can be ahead of the RPC's block store (-32004 "Block not available").
+        const slot = await rpc.getSlot({ commitment: 'finalized' }).send();
+        const ledger = await ledgerInstantWithRetry(lib, rpc, slot, now);
+        const action = await lib.KaminoAction.buildWithdrawTxns({
+          kaminoMarket: market,
+          amount: baseUnits,
+          reserveAddress: lib.address(USDC_RESERVE),
+          owner: lib.createNoopSigner(lib.address(wallet)),
+          obligation,
+          useV2Ixs: true,
+          scopeRefreshConfig: undefined,
+          currentLedgerInstant: ledger,
+          includeAtaIxs: true,
+        });
+        const instructions = [...action.computeBudgetIxs, ...action.setupIxs, ...action.lendingIxs, ...action.cleanupIxs];
+        const labels = [...action.setupIxsLabels, ...action.lendingIxsLabels, ...action.cleanupIxsLabels];
+        const { value: latest } = await rpc.getLatestBlockhash().send();
+        const message = lib.pipe(
+          lib.createTransactionMessage({ version: 0 }),
+          (m) => lib.setTransactionMessageFeePayer(lib.address(wallet), m),
+          (m) => lib.setTransactionMessageLifetimeUsingBlockhash(latest, m),
+          (m) => lib.appendTransactionMessageInstructions(instructions, m),
+        );
+        const wire = lib.getBase64EncodedWireTransaction(lib.compileTransaction(message));
+        // Watch the wallet's USDC token account so the result says what would actually arrive, not what was requested.
+        const encoder = lib.getAddressEncoder();
+        const [usdcAta] = await lib.getProgramDerivedAddress({ programAddress: lib.address(ATA_PROGRAM), seeds: [encoder.encode(lib.address(wallet)), encoder.encode(lib.address(TOKEN_PROGRAM)), encoder.encode(lib.address(USDC_MINT))] });
+        let before = 0n;
+        try { before = BigInt((await rpc.getTokenAccountBalance(usdcAta).send()).value.amount); } catch { before = 0n; }
+        const simulation = await rpc.simulateTransaction(wire, { encoding: 'base64', sigVerify: false, replaceRecentBlockhash: true, commitment: 'processed', accounts: { encoding: 'base64', addresses: [usdcAta] } }).send();
+        const err = simulation.value?.err ?? null;
+        const deliveredUsdc = err === null ? tokenAmountDelta(simulation.value?.accounts?.[0], before) : null;
+        return {
+          status: 200,
+          body: {
+            ok: err === null,
+            error: err === null ? null : typeof err === 'string' ? err : JSON.stringify(err),
+            unitsConsumed: simulation.value?.unitsConsumed == null ? null : Number(simulation.value.unitsConsumed),
+            logCount: Array.isArray(simulation.value?.logs) ? simulation.value.logs.length : 0,
+            instructions: labels,
+            amountUsdc,
+            deliveredUsdc,
+            transactionBase64: wire, // the unsigned transaction that was simulated; never sent
+            observedAt: new Date(now()).toISOString(),
+            rpc: new URL(rpcUrl).host,
+            obligation: String(obligation.obligationAddress ?? ''),
+          },
+        };
     };
+    for (let tries = 1; ; tries++) {
+      try {
+        return await attempt();
+      } catch (error) {
+        if (tries >= 3 || !isBlockNotAvailable(error)) throw error;
+        await sleep(300 * tries);
+      }
+    }
   } catch (error) {
     if (/could not find vanilla obligation/i.test(String(error?.message || ''))) {
       return { status: 404, body: { error: 'No Kamino obligation found for this wallet in the main market', ok: false } };
