@@ -8,11 +8,11 @@ Both outside reviews (Claude Opus, Codex) reached the same conclusion: the publi
 
 The public example accounts are strangers to each other, so the readout flags "net exposure not neutral" and the "keep SOL fails, trim both legs works" moment needs an odd target. A small hedge of your own makes the story real on screen:
 
-1. Hold about **2 SOL** in your Solana wallet (`8mgVs81Psuz72TAPjjz1KAjLbefUPxh73Qo4JkfcVu4x` held 0.79 on 2026-10-11).
-2. Deposit about **$120 USDC** to Hyperliquid (`0x3796bF467561B61a21e0B523894E44B8Ae5c6516`) and open a **2 SOL short**, cross margin, 2–3× leverage. In Hyperliquid's settings, set the account abstraction mode explicitly (Standard, or Unified) so `userAbstraction` stops returning `default`; the readout then says "verified" instead of warning.
+1. Hold about **2 SOL** in your Solana wallet (`348T3x6WWGy2B4P2KFitiUPYrxHeLKXKV9odscSaCKF5` held 0.79 on 2026-10-11).
+2. Deposit about **$120 USDC** to Hyperliquid (`0x30077e013CC7090Ba0b6f5bA5602659Ef0F3F03A`) and open a **2 SOL short**, cross margin, 2–3× leverage. Opened 2026-10-12 20:45 UTC+4 through Phantom's EVM address on app.hyperliquid.xyz (Phantom Perps itself only offers isolated margin, which the importer rejects): unified account, cross 3x, 2.00 SOL short, $188.70 spot USDC equity; `userAbstraction` returns `unifiedAccount`, so the readout says verified.
 3. Deposit about **$100 USDC** into Kamino's main market. Do not deposit SOL there (mixed collateral is rejected).
 4. Keep wallet USDC under about $5.
-5. Open `https://exitplan-rouge.vercel.app/#sol=8mgVs81Psuz72TAPjjz1KAjLbefUPxh73Qo4JkfcVu4x&hl=0x3796bF467561B61a21e0B523894E44B8Ae5c6516&target=300`. Expected: net exposure 0, keep-SOL fails at $300, the suggestion "Allow selling SOL (keep net exposure)" produces a paired route of roughly 0.9 SOL, and all three rehearsal legs produce artifacts.
+5. Open `https://exitplan-rouge.vercel.app/#sol=348T3x6WWGy2B4P2KFitiUPYrxHeLKXKV9odscSaCKF5&hl=0x30077e013CC7090Ba0b6f5bA5602659Ef0F3F03A&target=300`. Add `&minHlBuffer=20&preserveSolQuantity=true` for the recording. Expected: net exposure 0 once the wallet holds exactly 2.000000 SOL, model buffer $116.27 vs exchange withdrawable $116.29, liquidation $198 (82% above), keep-SOL fails at $300, "Allow selling SOL (keep net exposure)" produces the paired route, and all three rehearsal legs produce artifacts.
 
 If you skip this, record with the public example (deep links in `docs/demo-addresses.md`) and say on camera that the two accounts are unrelated.
 
