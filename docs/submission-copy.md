@@ -33,7 +33,7 @@ Hedged SOL on Solana, short on Hyperliquid, need cash? It reads your Hyperliquid
 
 **Tools:** Solana JSON-RPC via publicnode and the public mainnet RPC, Kamino API and @kamino-finance/klend-sdk, Jupiter lite API, Hyperliquid info API, Phantom provider (read-only), OpenAI Responses API (structured output, server side), Vercel Functions, Node test runner (279 tests, `npm test`, no network), LinkeDOM.
 
-**Team:** Solo — Pluto Han (UAE), Solana tooling contributor ([[link to a merged open-source PR]]). Holds this hedge personally; wrote the spec, verified the margin math against live Hyperliquid accounts and the 279 tests, inside the window, with AI coding agents doing the implementation.
+**Team:** Solo — Pluto Han (UAE), Solana tooling contributor (solana-com docs PR #1518, github.com/solana-foundation/solana-com/pull/1518). Holds this hedge personally; wrote the spec, verified the margin math against live Hyperliquid accounts and the 279 tests, inside the window, with AI coding agents doing the implementation.
 
 **Pre-existing code disclosure:** Everything was built on 2026-10-11 and 2026-10-12 (UTC+4), inside the window, by one person with AI coding assistants. The synthetic engine and UI were generated on the morning of the 11th with OpenAI's app tooling and imported as the first commit; the real-data adapters, deployment, English copy and several rounds of AI-assisted code review (Claude, Codex, Claude Opus) followed over the two days. Nothing predates the window.
 
